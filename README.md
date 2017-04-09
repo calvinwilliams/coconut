@@ -1,8 +1,8 @@
 coconut - Distribute id genereter
 
-## INSTALL
+# COMPILE && INSTALL
 
-$ git clone http://git.oschina.net/calvinwilliams/coconut.git
+```git clone http://git.oschina.net/calvinwilliams/coconut.git
 Cloning into 'coconut'...
 remote: Counting objects: 27, done.
 remote: Compressing objects: 100% (24/24), done.
@@ -24,7 +24,7 @@ cp -rf coconut /home/calvin/bin/
 $ ls -l ~/bin/coconut
 -rwxrwxr-x 1 calvin calvin 138477 04-09 14:38 /home/calvin/bin/coconut
 
-## START
+# QUICK START SERVICE
 
 $ coconut
 coconut v0.0.1
@@ -37,7 +37,7 @@ $
 $ ps -ef | grep coconut | grep -v grep
 calvin   27015     1  0 14:59 pts/2    00:00:00 coconut -r 1 -s 2 -p 8888
 
-## TEST && PRESS
+# TEST && PRESS
 
 $ curl http://127.0.0.1:8888/fetch_sequence
 aR1021oWtO500000
@@ -99,7 +99,7 @@ Percentage of the requests served within a certain time (ms)
   99%      6
  100%     14 (longest request)
 
-## STOP
+# STOP SERVICE
 
 $ ps -ef | grep coconut | grep -v grep
 calvin   27015     1  0 14:59 pts/2    00:00:00 coconut -r 1 -s 2 -p 8888
