@@ -236,8 +236,8 @@ static int OnProcess( struct ServerEnv *p_env , struct AcceptedSession *p_accept
 		nret = FormatHttpResponseStartLine( HTTP_OK , p_accepted_session->http , 0
 			, "Content-length: %d" HTTP_RETURN_NEWLINE
 			HTTP_RETURN_NEWLINE
-			"%s"
-			, strlen(p_env->id)
+			"%s" HTTP_RETURN_NEWLINE
+			, strlen(p_env->id) + 2
 			, p_env->id ) ;
 		if( nret )
 		{
