@@ -1,3 +1,11 @@
-coconut - 分布式发号器
+coconut - Distribute id genereter
 
-##安装
+## INSTALL
+
+
+
+
+## USE
+
+
+
