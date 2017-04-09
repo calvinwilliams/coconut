@@ -36,7 +36,6 @@ USAGE : coconut -r (reserve) -s (server_no) -p (listen_port)
 
 ```Bash
 $ coconut -r 1 -s 2 -p 8888
-$
 $ ps -ef | grep coconut | grep -v grep
 calvin   27015     1  0 14:59 pts/2    00:00:00 coconut -r 1 -s 2 -p 8888
 ```
@@ -113,6 +112,5 @@ Percentage of the requests served within a certain time (ms)
 $ ps -ef | grep coconut | grep -v grep
 calvin   27015     1  0 14:59 pts/2    00:00:00 coconut -r 1 -s 2 -p 8888
 $ kill 27015
-$
 ```
 
