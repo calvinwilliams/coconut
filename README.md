@@ -12,38 +12,43 @@ Unpacking objects: 100% (27/27), done.
 Checking connectivity... done.
 ```
 
+```Bash
 $ cd coconut
-
 $ cd src
-
 $ make -f makefile.Linux install
 gcc -g -fPIC -O2 -Wall -Werror -fno-strict-aliasing -I. -I/home/calvin/include  -c coconut.c
 gcc -g -fPIC -O2 -Wall -Werror -fno-strict-aliasing -I. -I/home/calvin/include  -c fasterhttp.c
 gcc -g -fPIC -O2 -Wall -Werror -fno-strict-aliasing -I. -I/home/calvin/include  -c LOGC.c
 gcc -g -fPIC -O2 -Wall -Werror -fno-strict-aliasing -o coconut coconut.o fasterhttp.o LOGC.o -L. -L/home/calvin/lib -lcrypto -lssl -lz 
 cp -rf coconut /home/calvin/bin/
-
 $ ls -l ~/bin/coconut
 -rwxrwxr-x 1 calvin calvin 138477 04-09 14:38 /home/calvin/bin/coconut
+```
 
 # QUICK START SERVICE
 
+```Bash
 $ coconut
 coconut v0.0.1
 Copyright by calvin 2017
 USAGE : coconut -r (reserve) -s (server_no) -p (listen_port)
+```
 
+```Bash
 $ coconut -r 1 -s 2 -p 8888
 $
-
 $ ps -ef | grep coconut | grep -v grep
 calvin   27015     1  0 14:59 pts/2    00:00:00 coconut -r 1 -s 2 -p 8888
+```
 
 # TEST && PRESS
 
+```Bash
 $ curl http://127.0.0.1:8888/fetch_sequence
 aR1021oWtO500000
+```
 
+```Bash
 $ ab -c 100 -n 100000 http://127.0.0.1:8888/fetch_sequence
 This is ApacheBench, Version 2.0.40-dev <$Revision: 1.146 $> apache-2.0
 Copyright 1996 Adam Twiss, Zeus Technology Ltd, http://www.zeustech.net/
@@ -100,12 +105,14 @@ Percentage of the requests served within a certain time (ms)
   98%      6
   99%      6
  100%     14 (longest request)
+```
 
 # STOP SERVICE
 
+```Bash
 $ ps -ef | grep coconut | grep -v grep
 calvin   27015     1  0 14:59 pts/2    00:00:00 coconut -r 1 -s 2 -p 8888
-
 $ kill 27015
 $
+```
 
