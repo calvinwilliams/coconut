@@ -222,7 +222,8 @@ static void InitSequence( struct ServerEnv *p_env )
 static void FetchSequence( struct ServerEnv *p_env )
 {
 	uint64_t	secondstamp ;
-	uint64_t	old_sequence , new_sequence , ret_sequence ;
+	uint64_t	old_sequence , new_sequence ;
+	uint64_t	ret_sequence ;
 	
 	/* Ãë´ÁÇø */
 	secondstamp = time( NULL );
@@ -243,7 +244,6 @@ static void FetchSequence( struct ServerEnv *p_env )
 		if( ret_sequence == old_sequence )
 			break;
 	}
-	
 	p_env->id[11] = sg_64_scale_system_charset[(ret_sequence>>24)&0x3F] ;
 	p_env->id[12] = sg_64_scale_system_charset[(ret_sequence>>18)&0x3F] ;
 	p_env->id[13] = sg_64_scale_system_charset[(ret_sequence>>12)&0x3F] ;
