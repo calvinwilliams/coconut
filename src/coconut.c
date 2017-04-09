@@ -3,7 +3,11 @@
 #include <string.h>
 #include <errno.h>
 #include <signal.h>
+#include <sys/types.h>
 #include <sys/epoll.h>
+#include <sys/ipc.h>
+#include <sys/shm.h>
+#include <sys/wait.h>
 
 #include "LOGC.h"
 #include "fasterhttp.h"
@@ -50,16 +54,42 @@ struct AcceptedSession
 	struct HttpEnv		*http ;
 } ;
 
+/* 管道会话结构 */
+struct PipeSession
+{
+	int			fds[ 2 ] ;
+} ;
+
+/* 共享内存信息结构 */
+struct ShareMemory
+{
+	int			proj_id ; /* 用于计算共享内存key的ftok参数 */
+	key_t			shmkey ; /* 共享内存key */
+	int			shmid ; /* 共享内存id */
+	void			*base ; /* 共享内存连接基地址 */
+	int			size ; /* 共享内存大小 */
+} ;
+
 /* 服务端环境结构 */
 struct ServerEnv
 {
-	uint64_t		reserve ;
-	uint64_t		server_no ;
-	int			listen_port ;
+	uint64_t			reserve ;
+	uint64_t			server_no ;
+	int				listen_port ;
+	int				processor_count ;
+	struct ProcessorInfo
+	{
+		struct PipeSession	pipe_session ;
+		pid_t			pid ;
+	} *processor_info_array , *this_processor_info ;
 	
-	int			epoll_fd ;
+	struct ShareMemory		serial_space_shm ;
+	uint64_t			*p_sequence ;
 	
-	char			id[ 64 + 1 ] ;
+	struct ListenSession		listen_session ;
+	int				epoll_fd ;
+	
+	char				id[ 64 + 1 ] ;
 } ;
 
 /* 从NetAddress中设置、得到IP、PORT宏 */
@@ -192,7 +222,7 @@ static void InitSequence( struct ServerEnv *p_env )
 static void FetchSequence( struct ServerEnv *p_env )
 {
 	uint64_t	secondstamp ;
-	static uint64_t	sequence = 0 ;
+	uint64_t	old_sequence , new_sequence , ret_sequence ;
 	
 	/* 秒戳区 */
 	secondstamp = time( NULL );
@@ -204,14 +234,21 @@ static void FetchSequence( struct ServerEnv *p_env )
 	p_env->id[10] = sg_64_scale_system_charset[secondstamp&0x3F] ;
 	
 	/* 序号区 */
-	p_env->id[11] = sg_64_scale_system_charset[(sequence>>24)&0x3F] ;
-	p_env->id[12] = sg_64_scale_system_charset[(sequence>>18)&0x3F] ;
-	p_env->id[13] = sg_64_scale_system_charset[(sequence>>12)&0x3F] ;
-	p_env->id[14] = sg_64_scale_system_charset[(sequence>>6)&0x3F] ;
-	p_env->id[15] = sg_64_scale_system_charset[sequence&0x3F] ;
+	while(1)
+	{
+		old_sequence = *(p_env->p_sequence) ;
+		new_sequence = old_sequence + 1 ;
+		/* 序号自增一 */
+		ret_sequence = __sync_val_compare_and_swap( p_env->p_sequence , old_sequence , new_sequence ) ;
+		if( ret_sequence == old_sequence )
+			break;
+	}
 	
-	/* 序号自增一 */
-	sequence++;
+	p_env->id[11] = sg_64_scale_system_charset[(ret_sequence>>24)&0x3F] ;
+	p_env->id[12] = sg_64_scale_system_charset[(ret_sequence>>18)&0x3F] ;
+	p_env->id[13] = sg_64_scale_system_charset[(ret_sequence>>12)&0x3F] ;
+	p_env->id[14] = sg_64_scale_system_charset[(ret_sequence>>6)&0x3F] ;
+	p_env->id[15] = sg_64_scale_system_charset[ret_sequence&0x3F] ;
 	
 	return;
 }
@@ -445,12 +482,8 @@ static int OnSendingSocket( struct ServerEnv *p_env , struct AcceptedSession *p_
 }
 
 /* 服务器主函数 */
-int coconut( void *pv )
+int CoconutWorker( struct ServerEnv *p_env )
 {
-	struct ServerEnv	*p_env = (struct ServerEnv *)pv ;
-	
-	struct ListenSession	listen_session ;
-	
 	struct epoll_event	event ;
 	struct epoll_event	events[ MAX_EPOLL_EVENTS ] ;
 	int			epoll_nfds ;
@@ -458,13 +491,11 @@ int coconut( void *pv )
 	struct epoll_event	*p_event = NULL ;
 	struct ListenSession	*p_listen_session = NULL ;
 	struct AcceptedSession	*p_accepted_session = NULL ;
+	int			quit_flag ;
 	
 	int			nret = 0 ;
 	
-	SetLogFile( "%s/log/coconut.log" , getenv("HOME") );
-	SetLogLevel( LOGLEVEL_WARN );
-	
-	InfoLog( __FILE__ , __LINE__ , "--- coconut begin ---" );
+	InfoLog( __FILE__ , __LINE__ , "sock[%d] pipe[%d]" , p_env->listen_session.netaddr.sock , p_env->this_processor_info->pipe_session.fds[0] );
 	
 	/* 创建epoll池 */
 	p_env->epoll_fd = epoll_create( 1024 ) ;
@@ -478,70 +509,42 @@ int coconut( void *pv )
 		InfoLog( __FILE__ , __LINE__ , "epoll_create ok" );
 	}
 	
-	/* 创建套接字 */
-	memset( & listen_session , 0x00 , sizeof(struct ListenSession) );
-	listen_session.netaddr.sock = socket( AF_INET , SOCK_STREAM , IPPROTO_TCP ) ;
-	if( listen_session.netaddr.sock == -1 )
+	/* 加入侦听可读事件到epoll */
+	memset( & event , 0x00 , sizeof(struct epoll_event) );
+	event.events = EPOLLIN | EPOLLERR ;
+	event.data.ptr = & (p_env->listen_session) ;
+	nret = epoll_ctl( p_env->epoll_fd , EPOLL_CTL_ADD , p_env->listen_session.netaddr.sock , & event ) ;
+	if( nret == -1 )
 	{
-		ErrorLog( __FILE__ , __LINE__ , "socket failed , errno[%d]" , errno );
+		ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add listen_session failed , errno[%d]" , p_env->epoll_fd , errno );
 		goto E1;
 	}
 	else
 	{
-		InfoLog( __FILE__ , __LINE__ , "socket ok[%d]" , listen_session.netaddr.sock );
-	}
-	
-	SetHttpNonblock( listen_session.netaddr.sock );
-	SetHttpReuseAddr( listen_session.netaddr.sock );
-	SetHttpNodelay( listen_session.netaddr.sock , 1 );
-	
-	/* 绑定套接字到侦听端口 */
-	strcpy( listen_session.netaddr.ip , "0" );
-	listen_session.netaddr.port = p_env->listen_port ;
-	SETNETADDRESS( listen_session.netaddr )
-	nret = bind( listen_session.netaddr.sock , (struct sockaddr *) & (listen_session.netaddr.addr) , sizeof(struct sockaddr) ) ;
-	if( nret == -1 )
-	{
-		ErrorLog( __FILE__ , __LINE__ , "bind[%s:%d][%d] failed , errno[%d]" , listen_session.netaddr.ip , listen_session.netaddr.port , listen_session.netaddr.sock , errno );
-		goto E2;
-	}
-	else
-	{
-		InfoLog( __FILE__ , __LINE__ , "bind[%s:%d][%d] ok" , listen_session.netaddr.ip , listen_session.netaddr.port , listen_session.netaddr.sock );
-	}
-	
-	/* 处于侦听状态了 */
-	nret = listen( listen_session.netaddr.sock , 10240 ) ;
-	if( nret == -1 )
-	{
-		ErrorLog( __FILE__ , __LINE__ , "listen[%s:%d][%d] failed , errno[%d]" , listen_session.netaddr.ip , listen_session.netaddr.port , listen_session.netaddr.sock , errno );
-		goto E2;
-	}
-	else
-	{
-		InfoLog( __FILE__ , __LINE__ , "listen[%s:%d][%d] ok" , listen_session.netaddr.ip , listen_session.netaddr.port , listen_session.netaddr.sock );
+		InfoLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add listen_session[%d] ok" , p_env->epoll_fd , p_env->listen_session.netaddr.sock );
 	}
 	
 	/* 加入侦听可读事件到epoll */
 	memset( & event , 0x00 , sizeof(struct epoll_event) );
 	event.events = EPOLLIN | EPOLLERR ;
-	event.data.ptr = & listen_session ;
-	nret = epoll_ctl( p_env->epoll_fd , EPOLL_CTL_ADD , listen_session.netaddr.sock , & event ) ;
+	event.data.ptr = & (p_env->this_processor_info->pipe_session) ;
+	nret = epoll_ctl( p_env->epoll_fd , EPOLL_CTL_ADD , p_env->this_processor_info->pipe_session.fds[0] , & event ) ;
 	if( nret == -1 )
 	{
-		ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add listen_session failed , errno[%d]" , p_env->epoll_fd , errno );
-		goto E2;
+		ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add pipe_session[%d] failed , errno[%d]" , p_env->epoll_fd , p_env->this_processor_info->pipe_session.fds[0] , errno );
+		goto E1;
 	}
 	else
 	{
-		InfoLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add listen_session[%d]" , p_env->epoll_fd , listen_session.netaddr.sock );
+		InfoLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add pipe_session[%d] ok" , p_env->epoll_fd , p_env->epoll_fd , p_env->this_processor_info->pipe_session.fds[0] );
 	}
 	
 	/* 设置信号处理函数 */
-	signal( SIGTERM , sig_set_flag );
+	signal( SIGTERM , SIG_IGN );
 	
 	/* 服务器主循环 */
-	while( ! g_SIGTERM_flag )
+	quit_flag = 0 ;
+	while( ! quit_flag )
 	{
 		/* 等待epoll事件，或者1秒超时 */
 		InfoLog( __FILE__ , __LINE__ , "epoll_wait[%d] ..." , p_env->epoll_fd );
@@ -570,7 +573,7 @@ int coconut( void *pv )
 		for( i = 0 , p_event = events ; i < epoll_nfds ; i++ , p_event++ )
 		{
 			/* 侦听套接字事件 */
-			if( p_event->data.ptr == & listen_session )
+			if( p_event->data.ptr == & (p_env->listen_session) )
 			{
 				p_listen_session = (struct ListenSession *)(p_event->data.ptr) ;
 				
@@ -604,6 +607,11 @@ int coconut( void *pv )
 					FatalLog( __FILE__ , __LINE__ , "Unknow listen session event[0x%X]" , p_event->events );
 					return -1;
 				}
+			}
+			/* 命令管道事件 */
+			else if( p_event->data.ptr == & (p_env->this_processor_info->pipe_session) )
+			{
+				quit_flag = 1 ;
 			}
 			/* 其它事件，即客户端连接会话事件 */
 			else
@@ -664,24 +672,262 @@ int coconut( void *pv )
 		}
 	}
 	
-E2 :
-	/* 关闭侦听端口 */
-	close( listen_session.netaddr.sock );
+	InfoLog( __FILE__ , __LINE__ , "child exiting" );
 	
 E1 :
 	/* 销毁epoll池 */
 	close( p_env->epoll_fd );
 	
+	return 0;
+}
+
+int CoconutMonitor( void *pv )
+{
+	struct ServerEnv	*p_env = (struct ServerEnv *)pv ;
+	
+	struct sigaction	act ;
+	int			i , j ;
+	pid_t			pid ;
+	int			status ;
+	
+	int			nret = 0 ;
+	
+	SetLogFile( "%s/log/coconut.log" , getenv("HOME") );
+	SetLogLevel( LOGLEVEL_DEBUG );
+	
+	InfoLog( __FILE__ , __LINE__ , "--- coconut begin ---" );
+	
+	/* 创建套接字 */
+	p_env->listen_session.netaddr.sock = socket( AF_INET , SOCK_STREAM , IPPROTO_TCP ) ;
+	if( p_env->listen_session.netaddr.sock == -1 )
+	{
+		ErrorLog( __FILE__ , __LINE__ , "socket failed , errno[%d]" , errno );
+		goto E1;
+	}
+	else
+	{
+		InfoLog( __FILE__ , __LINE__ , "socket ok[%d]" , p_env->listen_session.netaddr.sock );
+	}
+	
+	SetHttpNonblock( p_env->listen_session.netaddr.sock );
+	SetHttpReuseAddr( p_env->listen_session.netaddr.sock );
+	SetHttpNodelay( p_env->listen_session.netaddr.sock , 1 );
+	
+	/* 绑定套接字到侦听端口 */
+	strcpy( p_env->listen_session.netaddr.ip , "0" );
+	p_env->listen_session.netaddr.port = p_env->listen_port ;
+	SETNETADDRESS( p_env->listen_session.netaddr )
+	nret = bind( p_env->listen_session.netaddr.sock , (struct sockaddr *) & (p_env->listen_session.netaddr.addr) , sizeof(struct sockaddr) ) ;
+	if( nret == -1 )
+	{
+		ErrorLog( __FILE__ , __LINE__ , "bind[%s:%d][%d] failed , errno[%d]" , p_env->listen_session.netaddr.ip , p_env->listen_session.netaddr.port , p_env->listen_session.netaddr.sock , errno );
+		goto E2;
+	}
+	else
+	{
+		InfoLog( __FILE__ , __LINE__ , "bind[%s:%d][%d] ok" , p_env->listen_session.netaddr.ip , p_env->listen_session.netaddr.port , p_env->listen_session.netaddr.sock );
+	}
+	
+	/* 处于侦听状态了 */
+	nret = listen( p_env->listen_session.netaddr.sock , 10240 ) ;
+	if( nret == -1 )
+	{
+		ErrorLog( __FILE__ , __LINE__ , "listen[%s:%d][%d] failed , errno[%d]" , p_env->listen_session.netaddr.ip , p_env->listen_session.netaddr.port , p_env->listen_session.netaddr.sock , errno );
+		goto E2;
+	}
+	else
+	{
+		InfoLog( __FILE__ , __LINE__ , "listen[%s:%d][%d] ok" , p_env->listen_session.netaddr.ip , p_env->listen_session.netaddr.port , p_env->listen_session.netaddr.sock );
+	}
+	
+	/* 创建序列共享内存 */
+	p_env->serial_space_shm.shmkey = 0 ;
+	p_env->serial_space_shm.size = sizeof(uint64_t) ;
+	p_env->serial_space_shm.shmid = shmget( p_env->serial_space_shm.shmkey , p_env->serial_space_shm.size , IPC_CREAT|0644 ) ;
+	if( p_env->serial_space_shm.shmid == -1 )
+	{
+		ErrorLog( __FILE__ , __LINE__ , "shmget failed , errno[%d]" , errno );
+		goto E2;
+	}
+	else
+	{
+		InfoLog( __FILE__ , __LINE__ , "shmget ok , shmid[%d] shmsize[%d]" , p_env->serial_space_shm.shmid , p_env->serial_space_shm.size );
+	}
+	
+	/* 连接序列共享内存 */
+	p_env->serial_space_shm.base = shmat( p_env->serial_space_shm.shmid , NULL , 0 ) ;
+	if( p_env->serial_space_shm.base == NULL )
+	{
+		ErrorLog( __FILE__ , __LINE__ , "shmat failed , errno[%d]" , errno );
+		goto E3;
+	}
+	else
+	{
+		InfoLog( __FILE__ , __LINE__ , "shmat ok , shmid[%d] base[%p]" , p_env->serial_space_shm.shmid , p_env->serial_space_shm.base );
+	}
+	p_env->p_sequence = (uint64_t*)(p_env->serial_space_shm.base) ;
+	
+	/* 设置信号处理函数 */
+	act.sa_handler = & sig_set_flag ;
+	sigemptyset( & (act.sa_mask) );
+	act.sa_flags = 0 ;
+	sigaction( SIGTERM , & act , NULL );
+	
+	/* 创建工作进程组 */
+	for( i = 0 ; i < p_env->processor_count ; i++ )
+	{
+		nret = pipe( p_env->processor_info_array[i].pipe_session.fds ) ;
+		if( nret )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "pipe failed , errno[%d]" , errno );
+			goto E4;
+		}
+		else
+		{
+			InfoLog( __FILE__ , __LINE__ , "pipe ok , pipe[%d][%d]" , p_env->processor_info_array[i].pipe_session.fds[0] , p_env->processor_info_array[i].pipe_session.fds[1] );
+		}
+		
+		p_env->processor_info_array[i].pid = fork() ;
+		if( p_env->processor_info_array[i].pid == -1 )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "fork failed , errno[%d]" , errno );
+			goto E4;
+		}
+		else if( p_env->processor_info_array[i].pid == 0 )
+		{
+			InfoLog( __FILE__ , __LINE__ , "child : [%ld] fork [%ld]" , getppid() , getpid() );
+			InfoLog( __FILE__ , __LINE__ , "child close [%d]" , p_env->processor_info_array[i].pipe_session.fds[1] );
+			close( p_env->processor_info_array[i].pipe_session.fds[1] );
+			for( j = i - 1 ; j >= 0 ; j-- )
+			{
+				InfoLog( __FILE__ , __LINE__ , "child close [%d] too" , p_env->processor_info_array[j].pipe_session.fds[1] );
+				close( p_env->processor_info_array[j].pipe_session.fds[1] );
+			}
+			p_env->this_processor_info = p_env->processor_info_array+i ;
+			exit( -CoconutWorker( p_env ) );
+		}
+		else
+		{
+			InfoLog( __FILE__ , __LINE__ , "parent : [%ld] fork [%ld]" , getpid() , p_env->processor_info_array[i].pid );
+			InfoLog( __FILE__ , __LINE__ , "parent close [%d]" , p_env->processor_info_array[i].pipe_session.fds[0] );
+			close( p_env->processor_info_array[i].pipe_session.fds[0] );
+		}
+	}
+	
+	while( ! g_SIGTERM_flag )
+	{
+		/* 监控工作进程结束 */
+		pid = waitpid( -1 , & status , 0 ) ;
+		if( pid == -1 )
+		{
+			if( errno == EINTR )
+				continue;
+			ErrorLog( __FILE__ , __LINE__ , "waitpid failed , errno[%d]" , errno );
+			goto E4;
+		}
+		
+		/* 判断是否正常结束 */
+		if( WIFSIGNALED(status) || WTERMSIG(status) )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "waitpid[%d] WEXITSTATUS[%d] WIFSIGNALED[%d] WTERMSIG[%d]" , pid , WEXITSTATUS(status) , WIFSIGNALED(status) , WTERMSIG(status) );
+		}
+		else if( WEXITSTATUS(status) )
+		{
+			WarnLog( __FILE__ , __LINE__ , "waitpid[%d] WEXITSTATUS[%d] WIFSIGNALED[%d] WTERMSIG[%d]" , pid , WEXITSTATUS(status) , WIFSIGNALED(status) , WTERMSIG(status) );
+		}
+		else
+		{
+			InfoLog( __FILE__ , __LINE__ , "waitpid[%d] WEXITSTATUS[%d] WIFSIGNALED[%d] WTERMSIG[%d]" , pid , WEXITSTATUS(status) , WIFSIGNALED(status) , WTERMSIG(status) );
+		}
+		
+		/* 查询是哪个工作进程 */
+		for( i = 0 ; i < p_env->processor_count ; i++ )
+		{
+			if( p_env->processor_info_array[i].pid == pid )
+				break;
+		}
+		if( i >= p_env->processor_count )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "unknow pid[%d]" , pid );
+			goto E4;
+		}
+		
+		/* 创建工作进程 */
+		nret = pipe( p_env->processor_info_array[i].pipe_session.fds ) ;
+		if( nret )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "pipe failed , errno[%d]" , errno );
+			goto E4;
+		}
+		else
+		{
+			InfoLog( __FILE__ , __LINE__ , "pipe ok , pipe[%d][%d]" , p_env->processor_info_array[i].pipe_session.fds[0] , p_env->processor_info_array[i].pipe_session.fds[1] );
+		}
+		
+		p_env->processor_info_array[i].pid = fork() ;
+		if( p_env->processor_info_array[i].pid == -1 )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "fork failed , errno[%d]" , errno );
+			goto E4;
+		}
+		else if( p_env->processor_info_array[i].pid == 0 )
+		{
+			InfoLog( __FILE__ , __LINE__ , "child : [%ld] fork [%ld]" , getppid() , getpid() );
+			InfoLog( __FILE__ , __LINE__ , "child close [%d]" , p_env->processor_info_array[i].pipe_session.fds[1] );
+			close( p_env->processor_info_array[i].pipe_session.fds[1] );
+			for( j = i - 1 ; j >= 0 ; j-- )
+			{
+				InfoLog( __FILE__ , __LINE__ , "child close [%d] too" , p_env->processor_info_array[j].pipe_session.fds[1] );
+				close( p_env->processor_info_array[j].pipe_session.fds[1] );
+			}
+			p_env->this_processor_info = p_env->processor_info_array+i ;
+			exit( CoconutWorker( p_env ) );
+		}
+		else
+		{
+			InfoLog( __FILE__ , __LINE__ , "parent : [%ld] fork [%ld]" , getpid() , p_env->processor_info_array[i].pid );
+			InfoLog( __FILE__ , __LINE__ , "parent close [%d]" , p_env->processor_info_array[i].pipe_session.fds[0] );
+			close( p_env->processor_info_array[i].pipe_session.fds[0] );
+		}
+	}
+	
+	InfoLog( __FILE__ , __LINE__ , "parent exiting" );
+	
+	/* 关闭所有命令管道 */
+	for( i = 0 ; i < p_env->processor_count ; i++ )
+	{
+		close( p_env->processor_info_array[i].pipe_session.fds[1] ) ;
+	}
+	
+	/* 回收工作进程组 */
+	for( i = 0 ; i < p_env->processor_count ; i++ )
+	{
+		pid = waitpid( -1 , & status , 0 ) ;
+	}
+	
+E4 :
+	/* 断开共享内存 */
+	shmdt( p_env->serial_space_shm.base );
+	
+E3 :
+	/* 删除共享内存 */
+	shmctl( p_env->serial_space_shm.shmid , IPC_RMID , NULL );
+	
+E2 :
+	/* 关闭侦听端口 */
+	close( p_env->listen_session.netaddr.sock );
+	
+E1 :
 	InfoLog( __FILE__ , __LINE__ , "--- coconut end ---" );
 	
 	return 0;
 }
-
+	
 static void usage()
 {
 	printf( "coconut v0.0.1\n" );
 	printf( "Copyright by calvin 2017\n" );
-	printf( "USAGE : coconut -r (reserve) -s (server_no) -p (listen_port)\n" );
+	printf( "USAGE : coconut -r (reserve) -s (server_no) -p (listen_port) -c (processor_count)\n" );
 	return;
 }
 
@@ -711,24 +957,47 @@ int main( int argc , char *argv[] )
 			{
 				env.listen_port = atoi(argv[++i]) ;
 			}
+			else if( strcmp( argv[i] , "-c" ) == 0 && i + 1 < argc )
+			{
+				env.processor_count = atoi(argv[++i]) ;
+			}
 		}
 		
 		if( env.listen_port <= 0 )
 		{
-			printf( "Invalid command parameter\n" );
+			printf( "Invalid command parameter 'listen_port'\n" );
 			usage();
 			exit(7);
 		}
+		
+		if( env.processor_count == -1 )
+			env.processor_count = sysconf(_SC_NPROCESSORS_ONLN) ;
+		if( env.processor_count <= 0 )
+		{
+			printf( "Invalid command parameter 'processor_count'\n" );
+			usage();
+			exit(7);
+		}
+		
+		env.processor_info_array = (struct ProcessorInfo *)malloc( sizeof(struct ProcessorInfo) * env.processor_count ) ;
+		if( env.processor_info_array == NULL )
+		{
+			printf( "malloc failed , errno[%d]\n" , errno );
+			exit(1);
+		}
+		memset( env.processor_info_array , 0x00 , sizeof(struct ProcessorInfo) * env.processor_count );
 		
 		/* 初始化序列号前半段 */
 		InitSequence( & env );
 		
 		/* 进入服务器主函数 */
-		nret = BindDaemonServer( & coconut , (void*) & env ) ;
+		nret = BindDaemonServer( & CoconutMonitor , (void*) & env ) ;
 		if( nret )
 		{
 			printf( "Convert to daemon failed[%d] , errno[%d]\n" , nret , errno );
 		}
+		
+		free( env.processor_info_array );
 	}
 	else
 	{

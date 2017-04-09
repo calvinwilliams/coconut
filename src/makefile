@@ -25,6 +25,7 @@ LFLAGS		=	$(_LFLAGS) \
 			-lcrypto \
 			-lssl \
 			-lz \
+			-lgcc_s \
 
 ###### 额外宏定义区
 CLEAN_ADDITION	=
