@@ -2,13 +2,15 @@ coconut - Distribute id genereter
 
 # COMPILE && INSTALL
 
-```git clone http://git.oschina.net/calvinwilliams/coconut.git
+```Bash
+git clone http://git.oschina.net/calvinwilliams/coconut.git
 Cloning into 'coconut'...
 remote: Counting objects: 27, done.
 remote: Compressing objects: 100% (24/24), done.
 remote: Total 27 (delta 5), reused 0 (delta 0)
 Unpacking objects: 100% (27/27), done.
 Checking connectivity... done.
+```
 
 $ cd coconut
 
