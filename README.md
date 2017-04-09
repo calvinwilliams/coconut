@@ -42,7 +42,7 @@ $ ps -ef | grep coconut | grep -v grep
 calvin   27015     1  0 14:59 pts/2    00:00:00 coconut -r 1 -s 2 -p 8888
 ```
 
-# TEST && PRESS
+# TEST && PERFORMANCE
 
 ```Bash
 $ curl http://127.0.0.1:8888/fetch_sequence
