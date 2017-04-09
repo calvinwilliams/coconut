@@ -1,7 +1,7 @@
 coconut - Distribute id generater
 =================================
-Copyright by calvin
-Email : calvinwilliams@163.com
+Copyright by calvin<br>
+Email : calvinwilliams@163.com<br>
 
 # COMPILE && INSTALL
 
