@@ -1,4 +1,6 @@
-coconut - Distribute id genereter
+coconut - Distribute id generater
+Copyright by calvin<calvinwilliams@163.com>
+=================================
 
 # COMPILE && INSTALL
 
