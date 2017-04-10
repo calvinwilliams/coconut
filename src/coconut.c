@@ -222,7 +222,7 @@ static void InitSequence( struct ServerEnv *p_env )
 static void FetchSequence( struct ServerEnv *p_env )
 {
 	uint64_t	secondstamp ;
-	uint64_t	ret_sequence ;
+	static uint64_t	ret_sequence = 0 ;
 	
 	/* 秒戳区 */
 	secondstamp = time( NULL );
@@ -234,7 +234,8 @@ static void FetchSequence( struct ServerEnv *p_env )
 	p_env->id[10] = sg_64_scale_system_charset[secondstamp&0x3F] ;
 	
 	/* 序号区 */
-	ret_sequence = __sync_fetch_and_add( p_env->p_sequence , 1 ) ; /* 序号自增一 */
+	//ret_sequence = __sync_fetch_and_add( p_env->p_sequence , 1 ) ; /* 序号自增一 */
+	ret_sequence++;
 	p_env->id[11] = sg_64_scale_system_charset[(ret_sequence>>24)&0x3F] ;
 	p_env->id[12] = sg_64_scale_system_charset[(ret_sequence>>18)&0x3F] ;
 	p_env->id[13] = sg_64_scale_system_charset[(ret_sequence>>12)&0x3F] ;
