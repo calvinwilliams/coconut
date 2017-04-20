@@ -924,7 +924,7 @@ static void usage()
 {
 	printf( "coconut v0.0.1\n" );
 	printf( "Copyright by calvin 2017\n" );
-	printf( "USAGE : coconut -r (reserve) -s (server_no) -p (listen_port) -c (processor_count)\n" );
+	printf( "USAGE : coconut -r (reserve) -s (server_no) -p (listen_port) [ -c (processor_count) ]\n" );
 	return;
 }
 
@@ -967,9 +967,11 @@ int main( int argc , char *argv[] )
 			exit(7);
 		}
 		
-		if( env.processor_count == -1 )
+		if( env.processor_count == 0 )
+			env.processor_count = 1 ;
+		else if( env.processor_count == -1 )
 			env.processor_count = sysconf(_SC_NPROCESSORS_ONLN) ;
-		if( env.processor_count <= 0 )
+		else if( env.processor_count <= 0 )
 		{
 			printf( "Invalid command parameter 'processor_count'\n" );
 			usage();
