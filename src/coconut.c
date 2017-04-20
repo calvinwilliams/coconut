@@ -222,7 +222,6 @@ static void InitSequence( struct ServerEnv *p_env )
 static void FetchSequence( struct ServerEnv *p_env )
 {
 	uint64_t	secondstamp ;
-	uint64_t	old_sequence , new_sequence ;
 	uint64_t	ret_sequence ;
 	
 	/* 秒戳区 */
@@ -235,15 +234,7 @@ static void FetchSequence( struct ServerEnv *p_env )
 	p_env->id[10] = sg_64_scale_system_charset[secondstamp&0x3F] ;
 	
 	/* 序号区 */
-	while(1)
-	{
-		old_sequence = *(p_env->p_sequence) ;
-		new_sequence = old_sequence + 1 ;
-		/* 序号自增一 */
-		ret_sequence = __sync_val_compare_and_swap( p_env->p_sequence , old_sequence , new_sequence ) ;
-		if( ret_sequence == old_sequence )
-			break;
-	}
+	ret_sequence = __sync_fetch_and_add( p_env->p_sequence , 1 ) ; /* 序号自增一 */
 	p_env->id[11] = sg_64_scale_system_charset[(ret_sequence>>24)&0x3F] ;
 	p_env->id[12] = sg_64_scale_system_charset[(ret_sequence>>18)&0x3F] ;
 	p_env->id[13] = sg_64_scale_system_charset[(ret_sequence>>12)&0x3F] ;
@@ -293,12 +284,39 @@ static int OnProcess( struct ServerEnv *p_env , struct AcceptedSession *p_accept
 /* 处理接受新连接事件 */
 static int OnAcceptingSocket( struct ServerEnv *p_env , struct ListenSession *p_listen_session )
 {
+	struct AcceptedSession	accepted_session ;
 	struct AcceptedSession	*p_accepted_session = NULL ;
 	SOCKLEN_T		accept_addr_len ;
 	
 	struct epoll_event	event ;
 	
 	int			nret = 0 ;
+	
+	/* 接受新连接 */
+	accept_addr_len = sizeof(struct sockaddr) ;
+	accepted_session.netaddr.sock = accept( p_listen_session->netaddr.sock , (struct sockaddr *) & (accepted_session.netaddr.addr) , & accept_addr_len ) ;
+	if( accepted_session.netaddr.sock == -1 )
+	{
+		if( errno == EAGAIN )
+			return 0;
+		ErrorLog( __FILE__ , __LINE__ , "accept failed , errno[%d]" , errno );
+		return 1;
+	}
+	
+	SetHttpNonblock( accepted_session.netaddr.sock );
+	SetHttpNodelay( accepted_session.netaddr.sock , 1 );
+	
+	GETNETADDRESS( accepted_session.netaddr )
+	GETNETADDRESS_REMOTE( accepted_session.netaddr )
+	
+	/* 创建HTTP环境 */
+	accepted_session.http = CreateHttpEnv() ;
+	if( accepted_session.http == NULL )
+	{
+		ErrorLog( __FILE__ , __LINE__ , "CreateHttpEnv failed , errno[%d]" , errno );
+		close( accepted_session.netaddr.sock );
+		return 1;
+	}
 	
 	/* 申请内存以存放客户端连接会话结构 */
 	p_accepted_session = (struct AcceptedSession *)malloc( sizeof(struct AcceptedSession) ) ;
@@ -307,33 +325,7 @@ static int OnAcceptingSocket( struct ServerEnv *p_env , struct ListenSession *p_
 		ErrorLog( __FILE__ , __LINE__ , "malloc failed , errno[%d]" , errno );
 		return 1;
 	}
-	memset( p_accepted_session , 0x00 , sizeof(struct AcceptedSession) );
-	
-	/* 接受新连接 */
-	accept_addr_len = sizeof(struct sockaddr) ;
-	p_accepted_session->netaddr.sock = accept( p_listen_session->netaddr.sock , (struct sockaddr *) & (p_accepted_session->netaddr.addr) , & accept_addr_len ) ;
-	if( p_accepted_session->netaddr.sock == -1 )
-	{
-		ErrorLog( __FILE__ , __LINE__ , "accept failed , errno[%d]" , errno );
-		free( p_accepted_session );
-		return 1;
-	}
-	
-	SetHttpNonblock( p_accepted_session->netaddr.sock );
-	SetHttpNodelay( p_accepted_session->netaddr.sock , 1 );
-	
-	GETNETADDRESS( p_accepted_session->netaddr )
-	GETNETADDRESS_REMOTE( p_accepted_session->netaddr )
-	
-	/* 创建HTTP环境 */
-	p_accepted_session->http = CreateHttpEnv() ;
-	if( p_accepted_session->http == NULL )
-	{
-		ErrorLog( __FILE__ , __LINE__ , "CreateHttpEnv failed , errno[%d]" , errno );
-		close( p_accepted_session->netaddr.sock );
-		free( p_accepted_session );
-		return 1;
-	}
+	memcpy( p_accepted_session , & accepted_session , sizeof(struct AcceptedSession) );
 	
 	/* 加入新套接字可读事件到epoll */
 	memset( & event , 0x00 , sizeof(struct epoll_event) );
@@ -387,7 +379,7 @@ static int OnReceivingSocket( struct ServerEnv *p_env , struct AcceptedSession *
 	}
 	else if( nret == FASTERHTTP_INFO_TCP_CLOSE )
 	{
-		WarnLog( __FILE__ , __LINE__ , "ReceiveHttpRequestNonblock[%d] return ERROR[%d]" , p_accepted_session->netaddr.sock , nret );
+		InfoLog( __FILE__ , __LINE__ , "ReceiveHttpRequestNonblock[%d] return INFO[%d]" , p_accepted_session->netaddr.sock , nret );
 		return 1;
 	}
 	else if( nret )
@@ -693,7 +685,7 @@ int CoconutMonitor( void *pv )
 	int			nret = 0 ;
 	
 	SetLogFile( "%s/log/coconut.log" , getenv("HOME") );
-	SetLogLevel( LOGLEVEL_DEBUG );
+	SetLogLevel( LOGLEVEL_WARN );
 	
 	InfoLog( __FILE__ , __LINE__ , "--- coconut begin ---" );
 	
@@ -766,6 +758,7 @@ int CoconutMonitor( void *pv )
 		InfoLog( __FILE__ , __LINE__ , "shmat ok , shmid[%d] base[%p]" , p_env->serial_space_shm.shmid , p_env->serial_space_shm.base );
 	}
 	p_env->p_sequence = (uint64_t*)(p_env->serial_space_shm.base) ;
+	*(p_env->p_sequence) = 0 ;
 	
 	/* 设置信号处理函数 */
 	act.sa_handler = & sig_set_flag ;
