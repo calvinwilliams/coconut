@@ -33,6 +33,7 @@
 /* 日志文件名 */
 TLS char	g_log_pathfilename[ MAXLEN_FILENAME + 1 ] = "" ;
 TLS int		g_log_level = LOGLEVEL_INFO ;
+TLS pid_t	g_pid ;
 
 const char log_level_itoa[][6] = { "DEBUG" , "INFO" , "WARN" , "ERROR" , "FATAL" } ;
 
@@ -44,6 +45,8 @@ void SetLogFile( char *format , ... )
 	va_start( valist , format );
 	VSNPRINTF( g_log_pathfilename , sizeof(g_log_pathfilename)-1 , format , valist );
 	va_end( valist );
+	
+	g_pid = getpid() ;
 	
 	return;
 }
@@ -69,8 +72,10 @@ static int WriteLogBase( int log_level , char *c_filename , long c_fileline , ch
 	char		c_filename_copy[ MAXLEN_FILENAME + 1 ] ;
 	char		*p_c_filename = NULL ;
 	
-	struct timeval	tv ;
-	struct tm	stime ;
+	struct timeval		tv ;
+	struct tm		stime ;
+	static struct timeval	last_tv = { 0 , 0 } ;
+	static char		last_time_buf[ 10+1+8 + 1 ] = "" ;
 	
 	char		log_buffer[ 1024 + 1 ] ;
 	char		*log_bufptr = NULL ;
@@ -90,7 +95,12 @@ static int WriteLogBase( int log_level , char *c_filename , long c_fileline , ch
 	/* 填充行日志 */
 #if ( defined __linux__ ) || ( defined __unix ) || ( defined _AIX )
 	gettimeofday( & tv , NULL );
-	localtime_r( &(tv.tv_sec) , & stime );
+	if( tv.tv_sec != last_tv.tv_sec )
+	{
+		localtime_r( &(tv.tv_sec) , & stime );
+		strftime( last_time_buf , sizeof(last_time_buf) , "%Y-%m-%d %H:%M:%S" , & stime ) ;
+		last_tv.tv_sec = tv.tv_sec ;
+	}
 #elif ( defined _WIN32 )
 	{
 	SYSTEMTIME	stNow ;
@@ -110,13 +120,7 @@ static int WriteLogBase( int log_level , char *c_filename , long c_fileline , ch
 	log_buflen = 0 ;
 	log_buf_remain_len = sizeof(log_buffer) - 1 ;
 	
-	len = strftime( log_bufptr , log_buf_remain_len , "%Y-%m-%d %H:%M:%S" , & stime ) ;
-	OFFSET_BUFPTR( log_buffer , log_bufptr , len , log_buflen , log_buf_remain_len );
-	len = SNPRINTF( log_bufptr , log_buf_remain_len , ".%06ld" , (long)(tv.tv_usec) ) ;
-	OFFSET_BUFPTR( log_buffer , log_bufptr , len , log_buflen , log_buf_remain_len );
-	len = SNPRINTF( log_bufptr , log_buf_remain_len , " | %-5s" , log_level_itoa[log_level] ) ;
-	OFFSET_BUFPTR( log_buffer , log_bufptr , len , log_buflen , log_buf_remain_len );
-	len = SNPRINTF( log_bufptr , log_buf_remain_len , " | %lu:%lu:%s:%ld | " , PROCESSID , THREADID , p_c_filename , c_fileline ) ;
+	len = SNPRINTF( log_bufptr , log_buf_remain_len , "%s.%06ld | %-5s | %d:%s:%ld | " , last_time_buf , (long)(tv.tv_usec) , log_level_itoa[log_level] , g_pid , p_c_filename , c_fileline ) ;
 	OFFSET_BUFPTR( log_buffer , log_bufptr , len , log_buflen , log_buf_remain_len );
 	len = VSNPRINTF( log_bufptr , log_buf_remain_len , format , valist );
 	OFFSET_BUFPTR( log_buffer , log_bufptr , len , log_buflen , log_buf_remain_len );

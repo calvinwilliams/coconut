@@ -222,7 +222,8 @@ static void InitSequence( struct ServerEnv *p_env )
 static void FetchSequence( struct ServerEnv *p_env )
 {
 	uint64_t	secondstamp ;
-	static uint64_t	ret_sequence = 0 ;
+	uint64_t	ret_sequence ;
+	// static uint64_t	ret_sequence = 0 ;
 	
 	/* 秒戳区 */
 	secondstamp = time( NULL );
@@ -234,8 +235,8 @@ static void FetchSequence( struct ServerEnv *p_env )
 	p_env->id[10] = sg_64_scale_system_charset[secondstamp&0x3F] ;
 	
 	/* 序号区 */
-	//ret_sequence = __sync_fetch_and_add( p_env->p_sequence , 1 ) ; /* 序号自增一 */
-	ret_sequence++;
+	ret_sequence = __sync_fetch_and_add( p_env->p_sequence , 1 ) ; /* 序号自增一 */
+	// ret_sequence++;
 	p_env->id[11] = sg_64_scale_system_charset[(ret_sequence>>24)&0x3F] ;
 	p_env->id[12] = sg_64_scale_system_charset[(ret_sequence>>18)&0x3F] ;
 	p_env->id[13] = sg_64_scale_system_charset[(ret_sequence>>12)&0x3F] ;
@@ -488,6 +489,8 @@ int CoconutWorker( struct ServerEnv *p_env )
 	
 	int			nret = 0 ;
 	
+	SetLogFile( "%s/log/coconut.log" , getenv("HOME") );
+	
 	InfoLog( __FILE__ , __LINE__ , "sock[%d] pipe[%d]" , p_env->listen_session.netaddr.sock , p_env->this_processor_info->pipe_session.fds[0] );
 	
 	/* 创建epoll池 */
@@ -685,8 +688,8 @@ int CoconutMonitor( void *pv )
 	
 	int			nret = 0 ;
 	
-	SetLogFile( "%s/log/coconut.log" , getenv("HOME") );
 	SetLogLevel( LOGLEVEL_WARN );
+	SetLogFile( "%s/log/coconut.log" , getenv("HOME") );
 	
 	InfoLog( __FILE__ , __LINE__ , "--- coconut begin ---" );
 	
@@ -707,7 +710,7 @@ int CoconutMonitor( void *pv )
 	SetHttpNodelay( p_env->listen_session.netaddr.sock , 1 );
 	
 	/* 绑定套接字到侦听端口 */
-	strcpy( p_env->listen_session.netaddr.ip , "0" );
+	strcpy( p_env->listen_session.netaddr.ip , "" );
 	p_env->listen_session.netaddr.port = p_env->listen_port ;
 	SETNETADDRESS( p_env->listen_session.netaddr )
 	nret = bind( p_env->listen_session.netaddr.sock , (struct sockaddr *) & (p_env->listen_session.netaddr.addr) , sizeof(struct sockaddr) ) ;
