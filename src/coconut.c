@@ -8,6 +8,8 @@
 #include <sys/ipc.h>
 #include <sys/shm.h>
 #include <sys/wait.h>
+#define __USE_GNU
+#include <sched.h>
 
 #include "LOGC.h"
 #include "fasterhttp.h"
@@ -77,6 +79,7 @@ struct ServerEnv
 	uint64_t			server_no ;
 	int				listen_port ;
 	int				processor_count ;
+	int				cpu_affinity ;
 	struct ProcessorInfo
 	{
 		struct PipeSession	pipe_session ;
@@ -172,6 +175,18 @@ static int BindDaemonServer( int (* ServerMain)( void *pv ) , void *pv , int clo
 	ServerMain( pv );
 	
 	return 0;
+}
+
+int BindCpuAffinity( int processor_no )
+{
+	cpu_set_t	cpu_mask ;
+	
+	int		nret = 0 ;
+	
+	CPU_ZERO( & cpu_mask );
+	CPU_SET( processor_no , & cpu_mask );
+	nret = sched_setaffinity( 0 , sizeof(cpu_mask) , & cpu_mask ) ;
+	return nret;
 }
 
 /* 信号处理函数 */
@@ -830,6 +845,8 @@ int CoconutMonitor( void *pv )
 				close( p_env->processor_info_array[j].pipe_session.fds[1] );
 			}
 			p_env->this_processor_info = p_env->processor_info_array+i ;
+			if( p_env->cpu_affinity )
+				BindCpuAffinity( i );
 			exit( -CoconutWorker( p_env ) );
 		}
 		else
@@ -907,6 +924,8 @@ int CoconutMonitor( void *pv )
 				close( p_env->processor_info_array[j].pipe_session.fds[1] );
 			}
 			p_env->this_processor_info = p_env->processor_info_array+i ;
+			if( p_env->cpu_affinity )
+				BindCpuAffinity( i );
 			exit( CoconutWorker( p_env ) );
 		}
 		else
@@ -958,9 +977,9 @@ E1 :
 	
 static void usage()
 {
-	printf( "coconut v0.0.2.0\n" );
+	printf( "coconut v0.0.2.1\n" );
 	printf( "Copyright by calvin 2017\n" );
-	printf( "USAGE : coconut -r (reserve) -s (server_no) -p (listen_port) [ -c (processor_count) ]\n" );
+	printf( "USAGE : coconut -r (reserve) -s (server_no) -p (listen_port) [ -c (processor_count) ] [ --cpu-affinity ]\n" );
 	return;
 }
 
@@ -993,6 +1012,10 @@ int main( int argc , char *argv[] )
 			else if( strcmp( argv[i] , "-c" ) == 0 && i + 1 < argc )
 			{
 				env.processor_count = atoi(argv[++i]) ;
+			}
+			else if( strcmp( argv[i] , "--cpu-affinity" ) == 0 )
+			{
+				env.cpu_affinity = 1 ;
 			}
 		}
 		
