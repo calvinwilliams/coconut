@@ -81,13 +81,14 @@ struct ServerEnv
 	{
 		struct PipeSession	pipe_session ;
 		pid_t			pid ;
+		
+		int			epoll_fd ;
 	} *processor_info_array , *this_processor_info ;
 	
 	struct ShareMemory		serial_space_shm ;
 	uint64_t			*p_sequence ;
 	
 	struct ListenSession		listen_session ;
-	int				epoll_fd ;
 	
 	char				id[ 64 + 1 ] ;
 } ;
@@ -131,7 +132,7 @@ struct ServerEnv
 	}
 
 /* 转换当前进程为守护进程 */
-static int BindDaemonServer( int (* ServerMain)( void *pv ) , void *pv )
+static int BindDaemonServer( int (* ServerMain)( void *pv ) , void *pv , int close_flag )
 {
 	int	pid ;
 	
@@ -157,9 +158,12 @@ static int BindDaemonServer( int (* ServerMain)( void *pv ) , void *pv )
 			return 0;
 	}
 	
-	close(0);
-	close(1);
-	close(2);
+	if( close_flag )
+	{
+		close(0);
+		close(1);
+		close(2);
+	}
 	
 	umask( 0 ) ;
 	
@@ -294,57 +298,60 @@ static int OnAcceptingSocket( struct ServerEnv *p_env , struct ListenSession *p_
 	
 	int			nret = 0 ;
 	
-	/* 接受新连接 */
-	accept_addr_len = sizeof(struct sockaddr) ;
-	accepted_session.netaddr.sock = accept( p_listen_session->netaddr.sock , (struct sockaddr *) & (accepted_session.netaddr.addr) , & accept_addr_len ) ;
-	if( accepted_session.netaddr.sock == -1 )
+	while(1)
 	{
-		if( errno == EAGAIN )
-			return 0;
-		ErrorLog( __FILE__ , __LINE__ , "accept failed , errno[%d]" , errno );
-		return 1;
-	}
-	
-	SetHttpNonblock( accepted_session.netaddr.sock );
-	SetHttpNodelay( accepted_session.netaddr.sock , 1 );
-	
-	GETNETADDRESS( accepted_session.netaddr )
-	GETNETADDRESS_REMOTE( accepted_session.netaddr )
-	
-	/* 创建HTTP环境 */
-	accepted_session.http = CreateHttpEnv() ;
-	if( accepted_session.http == NULL )
-	{
-		ErrorLog( __FILE__ , __LINE__ , "CreateHttpEnv failed , errno[%d]" , errno );
-		close( accepted_session.netaddr.sock );
-		return 1;
-	}
-	
-	/* 申请内存以存放客户端连接会话结构 */
-	p_accepted_session = (struct AcceptedSession *)malloc( sizeof(struct AcceptedSession) ) ;
-	if( p_accepted_session == NULL )
-	{
-		ErrorLog( __FILE__ , __LINE__ , "malloc failed , errno[%d]" , errno );
-		return 1;
-	}
-	memcpy( p_accepted_session , & accepted_session , sizeof(struct AcceptedSession) );
-	
-	/* 加入新套接字可读事件到epoll */
-	memset( & event , 0x00 , sizeof(struct epoll_event) );
-	event.events = EPOLLIN | EPOLLERR ;
-	event.data.ptr = p_accepted_session ;
-	nret = epoll_ctl( p_env->epoll_fd , EPOLL_CTL_ADD , p_accepted_session->netaddr.sock , & event ) ;
-	if( nret == -1 )
-	{
-		ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add[%d] failed , errno[%d]" , p_env->epoll_fd , p_accepted_session->netaddr.sock , errno );
-		DestroyHttpEnv( p_accepted_session->http );
-		close( p_accepted_session->netaddr.sock );
-		free( p_accepted_session );
-		return 1;
-	}
-	else
-	{
-		DebugLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add[%d] ok" , p_env->epoll_fd , p_accepted_session->netaddr.sock );
+		/* 接受新连接 */
+		accept_addr_len = sizeof(struct sockaddr) ;
+		accepted_session.netaddr.sock = accept( p_listen_session->netaddr.sock , (struct sockaddr *) & (accepted_session.netaddr.addr) , & accept_addr_len ) ;
+		if( accepted_session.netaddr.sock == -1 )
+		{
+			if( errno == EAGAIN )
+				break;
+			ErrorLog( __FILE__ , __LINE__ , "accept failed , errno[%d]" , errno );
+			return 1;
+		}
+		
+		SetHttpNonblock( accepted_session.netaddr.sock );
+		SetHttpNodelay( accepted_session.netaddr.sock , 1 );
+		
+		GETNETADDRESS( accepted_session.netaddr )
+		GETNETADDRESS_REMOTE( accepted_session.netaddr )
+		
+		/* 创建HTTP环境 */
+		accepted_session.http = CreateHttpEnv() ;
+		if( accepted_session.http == NULL )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "CreateHttpEnv failed , errno[%d]" , errno );
+			close( accepted_session.netaddr.sock );
+			return 1;
+		}
+		
+		/* 申请内存以存放客户端连接会话结构 */
+		p_accepted_session = (struct AcceptedSession *)malloc( sizeof(struct AcceptedSession) ) ;
+		if( p_accepted_session == NULL )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "malloc failed , errno[%d]" , errno );
+			return 1;
+		}
+		memcpy( p_accepted_session , & accepted_session , sizeof(struct AcceptedSession) );
+		
+		/* 加入新套接字可读事件到epoll */
+		memset( & event , 0x00 , sizeof(struct epoll_event) );
+		event.events = EPOLLIN | EPOLLERR ;
+		event.data.ptr = p_accepted_session ;
+		nret = epoll_ctl( p_env->this_processor_info->epoll_fd , EPOLL_CTL_ADD , p_accepted_session->netaddr.sock , & event ) ;
+		if( nret == -1 )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add[%d] failed , errno[%d]" , p_env->this_processor_info->epoll_fd , p_accepted_session->netaddr.sock , errno );
+			DestroyHttpEnv( p_accepted_session->http );
+			close( p_accepted_session->netaddr.sock );
+			free( p_accepted_session );
+			return 1;
+		}
+		else
+		{
+			DebugLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add[%d] ok" , p_env->this_processor_info->epoll_fd , p_accepted_session->netaddr.sock );
+		}
 	}
 	
 	return 0;
@@ -357,7 +364,7 @@ static void OnClosingSocket( struct ServerEnv *p_env , struct AcceptedSession *p
 	{
 		InfoLog( __FILE__ , __LINE__ , "close session[%d]" , p_accepted_session->netaddr.sock );
 		DestroyHttpEnv( p_accepted_session->http );
-		epoll_ctl( p_env->epoll_fd , EPOLL_CTL_DEL , p_accepted_session->netaddr.sock , NULL );
+		epoll_ctl( p_env->this_processor_info->epoll_fd , EPOLL_CTL_DEL , p_accepted_session->netaddr.sock , NULL );
 		close( p_accepted_session->netaddr.sock );
 		free( p_accepted_session );
 	}
@@ -410,15 +417,15 @@ static int OnReceivingSocket( struct ServerEnv *p_env , struct AcceptedSession *
 		memset( & event , 0x00 , sizeof(struct epoll_event) );
 		event.events = EPOLLOUT | EPOLLERR ;
 		event.data.ptr = p_accepted_session ;
-		nret = epoll_ctl( p_env->epoll_fd , EPOLL_CTL_MOD , p_accepted_session->netaddr.sock , & event ) ;
+		nret = epoll_ctl( p_env->this_processor_info->epoll_fd , EPOLL_CTL_MOD , p_accepted_session->netaddr.sock , & event ) ;
 		if( nret == -1 )
 		{
-			ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] modify[%d] failed , errno[%d]" , p_env->epoll_fd , p_accepted_session->netaddr.sock , errno );
+			ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] modify[%d] failed , errno[%d]" , p_env->this_processor_info->epoll_fd , p_accepted_session->netaddr.sock , errno );
 			return 1;
 		}
 		else
 		{
-			DebugLog( __FILE__ , __LINE__ , "epoll_ctl[%d] modify[%d] ok" , p_env->epoll_fd , p_accepted_session->netaddr.sock );
+			DebugLog( __FILE__ , __LINE__ , "epoll_ctl[%d] modify[%d] ok" , p_env->this_processor_info->epoll_fd , p_accepted_session->netaddr.sock );
 		}
 	}
 	
@@ -460,15 +467,15 @@ static int OnSendingSocket( struct ServerEnv *p_env , struct AcceptedSession *p_
 		memset( & event , 0x00 , sizeof(struct epoll_event) );
 		event.events = EPOLLIN | EPOLLERR ;
 		event.data.ptr = p_accepted_session ;
-		nret = epoll_ctl( p_env->epoll_fd , EPOLL_CTL_MOD , p_accepted_session->netaddr.sock , & event ) ;
+		nret = epoll_ctl( p_env->this_processor_info->epoll_fd , EPOLL_CTL_MOD , p_accepted_session->netaddr.sock , & event ) ;
 		if( nret == -1 )
 		{
-			ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] modify[%d] failed , errno[%d]" , p_env->epoll_fd , p_accepted_session->netaddr.sock , errno );
+			ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] modify[%d] failed , errno[%d]" , p_env->this_processor_info->epoll_fd , p_accepted_session->netaddr.sock , errno );
 			return 1;
 		}
 		else
 		{
-			DebugLog( __FILE__ , __LINE__ , "epoll_ctl[%d] modify[%d] ok" , p_env->epoll_fd , p_accepted_session->netaddr.sock );
+			DebugLog( __FILE__ , __LINE__ , "epoll_ctl[%d] modify[%d] ok" , p_env->this_processor_info->epoll_fd , p_accepted_session->netaddr.sock );
 		}
 	}
 	
@@ -481,7 +488,7 @@ int CoconutWorker( struct ServerEnv *p_env )
 	struct epoll_event	event ;
 	struct epoll_event	events[ MAX_EPOLL_EVENTS ] ;
 	int			epoll_nfds ;
-	int			i ;
+	int			i , j ;
 	struct epoll_event	*p_event = NULL ;
 	struct ListenSession	*p_listen_session = NULL ;
 	struct AcceptedSession	*p_accepted_session = NULL ;
@@ -493,46 +500,19 @@ int CoconutWorker( struct ServerEnv *p_env )
 	
 	InfoLog( __FILE__ , __LINE__ , "sock[%d] pipe[%d]" , p_env->listen_session.netaddr.sock , p_env->this_processor_info->pipe_session.fds[0] );
 	
-	/* 创建epoll池 */
-	p_env->epoll_fd = epoll_create( 1024 ) ;
-	if( p_env->epoll_fd == -1 )
-	{
-		ErrorLog( __FILE__ , __LINE__ , "epoll_create failed , errno[%d]" , errno );
-		return -1;
-	}
-	else
-	{
-		InfoLog( __FILE__ , __LINE__ , "epoll_create ok" );
-	}
-	
-	/* 加入侦听可读事件到epoll */
-	memset( & event , 0x00 , sizeof(struct epoll_event) );
-	event.events = EPOLLIN | EPOLLERR ;
-	event.data.ptr = & (p_env->listen_session) ;
-	nret = epoll_ctl( p_env->epoll_fd , EPOLL_CTL_ADD , p_env->listen_session.netaddr.sock , & event ) ;
-	if( nret == -1 )
-	{
-		ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add listen_session failed , errno[%d]" , p_env->epoll_fd , errno );
-		goto E1;
-	}
-	else
-	{
-		InfoLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add listen_session[%d] ok" , p_env->epoll_fd , p_env->listen_session.netaddr.sock );
-	}
-	
 	/* 加入侦听可读事件到epoll */
 	memset( & event , 0x00 , sizeof(struct epoll_event) );
 	event.events = EPOLLIN | EPOLLERR ;
 	event.data.ptr = & (p_env->this_processor_info->pipe_session) ;
-	nret = epoll_ctl( p_env->epoll_fd , EPOLL_CTL_ADD , p_env->this_processor_info->pipe_session.fds[0] , & event ) ;
+	nret = epoll_ctl( p_env->this_processor_info->epoll_fd , EPOLL_CTL_ADD , p_env->this_processor_info->pipe_session.fds[0] , & event ) ;
 	if( nret == -1 )
 	{
-		ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add pipe_session[%d] failed , errno[%d]" , p_env->epoll_fd , p_env->this_processor_info->pipe_session.fds[0] , errno );
-		goto E1;
+		ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add pipe_session[%d] failed , errno[%d]" , p_env->this_processor_info->epoll_fd , p_env->this_processor_info->pipe_session.fds[0] , errno );
+		return -1;
 	}
 	else
 	{
-		InfoLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add pipe_session[%d] ok" , p_env->epoll_fd , p_env->epoll_fd , p_env->this_processor_info->pipe_session.fds[0] );
+		InfoLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add pipe_session[%d] ok" , p_env->this_processor_info->epoll_fd , p_env->this_processor_info->pipe_session.fds[0] );
 	}
 	
 	/* 设置信号处理函数 */
@@ -543,26 +523,26 @@ int CoconutWorker( struct ServerEnv *p_env )
 	while( ! quit_flag )
 	{
 		/* 等待epoll事件，或者1秒超时 */
-		InfoLog( __FILE__ , __LINE__ , "epoll_wait[%d] ..." , p_env->epoll_fd );
+		InfoLog( __FILE__ , __LINE__ , "epoll_wait[%d] ..." , p_env->this_processor_info->epoll_fd );
 		memset( events , 0x00 , sizeof(events) );
-		epoll_nfds = epoll_wait( p_env->epoll_fd , events , MAX_EPOLL_EVENTS , 1000 ) ;
+		epoll_nfds = epoll_wait( p_env->this_processor_info->epoll_fd , events , MAX_EPOLL_EVENTS , 1000 ) ;
 		if( epoll_nfds == -1 )
 		{
 			if( errno == EINTR )
 			{
-				InfoLog( __FILE__ , __LINE__ , "epoll_wait[%d] interrupted" , p_env->epoll_fd );
+				InfoLog( __FILE__ , __LINE__ , "epoll_wait[%d] interrupted" , p_env->this_processor_info->epoll_fd );
 				continue;
 			}
 			else
 			{
-				ErrorLog( __FILE__ , __LINE__ , "epoll_wait[%d] failed , errno[%d]" , p_env->epoll_fd , ERRNO );
+				ErrorLog( __FILE__ , __LINE__ , "epoll_wait[%d] failed , errno[%d]" , p_env->this_processor_info->epoll_fd , ERRNO );
 			}
 			
 			return -1;
 		}
 		else
 		{
-			InfoLog( __FILE__ , __LINE__ , "epoll_wait[%d] return[%d]events" , p_env->epoll_fd , epoll_nfds );
+			InfoLog( __FILE__ , __LINE__ , "epoll_wait[%d] return[%d]events" , p_env->this_processor_info->epoll_fd , epoll_nfds );
 		}
 		
 		/* 处理所有事件 */
@@ -589,6 +569,27 @@ int CoconutWorker( struct ServerEnv *p_env )
 					else
 					{
 						DebugLog( __FILE__ , __LINE__ , "OnAcceptingSocket ok" );
+					}
+					
+					/* 转移侦听可读事件到下一个epoll */
+					j = p_env->this_processor_info - p_env->processor_info_array + 1 ;
+					if( j >= p_env->processor_count )
+						j = 0 ;
+					
+					epoll_ctl( p_env->this_processor_info->epoll_fd , EPOLL_CTL_DEL , p_env->listen_session.netaddr.sock , NULL );
+					
+					memset( & event , 0x00 , sizeof(struct epoll_event) );
+					event.events = EPOLLIN | EPOLLERR ;
+					event.data.ptr = & (p_env->listen_session) ;
+					nret = epoll_ctl( p_env->processor_info_array[j].epoll_fd , EPOLL_CTL_ADD , p_env->listen_session.netaddr.sock , & event ) ;
+					if( nret == -1 )
+					{
+						ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add listen_session failed , errno[%d]" , p_env->processor_info_array[j].epoll_fd , errno );
+						return -1;
+					}
+					else
+					{
+						InfoLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add listen_session[%d] ok" , p_env->processor_info_array[j].epoll_fd , p_env->listen_session.netaddr.sock );
 					}
 				}
 				/* 出错事件 */
@@ -670,10 +671,6 @@ int CoconutWorker( struct ServerEnv *p_env )
 	
 	InfoLog( __FILE__ , __LINE__ , "child exiting" );
 	
-E1 :
-	/* 销毁epoll池 */
-	close( p_env->epoll_fd );
-	
 	return 0;
 }
 
@@ -685,6 +682,8 @@ int CoconutMonitor( void *pv )
 	int			i , j ;
 	pid_t			pid ;
 	int			status ;
+	
+	struct epoll_event	event ;
 	
 	int			nret = 0 ;
 	
@@ -764,6 +763,36 @@ int CoconutMonitor( void *pv )
 	p_env->p_sequence = (uint64_t*)(p_env->serial_space_shm.base) ;
 	*(p_env->p_sequence) = 0 ;
 	
+	/* 创建epoll池 */
+	for( i = 0 ; i < p_env->processor_count ; i++ )
+	{
+		p_env->processor_info_array[i].epoll_fd = epoll_create( 1024 ) ;
+		if( p_env->processor_info_array[i].epoll_fd == -1 )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "epoll_create failed , errno[%d]" , errno );
+			goto E4;
+		}
+		else
+		{
+			InfoLog( __FILE__ , __LINE__ , "epoll_create ok" );
+		}
+	}
+	
+	/* 加入侦听可读事件到epoll */
+	memset( & event , 0x00 , sizeof(struct epoll_event) );
+	event.events = EPOLLIN | EPOLLERR ;
+	event.data.ptr = & (p_env->listen_session) ;
+	nret = epoll_ctl( p_env->processor_info_array[0].epoll_fd , EPOLL_CTL_ADD , p_env->listen_session.netaddr.sock , & event ) ;
+	if( nret == -1 )
+	{
+		ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add listen_session failed , errno[%d]" , p_env->processor_info_array[0].epoll_fd , errno );
+		goto E5;
+	}
+	else
+	{
+		InfoLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add listen_session[%d] ok" , p_env->processor_info_array[0].epoll_fd , p_env->listen_session.netaddr.sock );
+	}
+	
 	/* 设置信号处理函数 */
 	act.sa_handler = & sig_set_flag ;
 	sigemptyset( & (act.sa_mask) );
@@ -777,7 +806,7 @@ int CoconutMonitor( void *pv )
 		if( nret )
 		{
 			ErrorLog( __FILE__ , __LINE__ , "pipe failed , errno[%d]" , errno );
-			goto E4;
+			goto E5;
 		}
 		else
 		{
@@ -788,7 +817,7 @@ int CoconutMonitor( void *pv )
 		if( p_env->processor_info_array[i].pid == -1 )
 		{
 			ErrorLog( __FILE__ , __LINE__ , "fork failed , errno[%d]" , errno );
-			goto E4;
+			goto E5;
 		}
 		else if( p_env->processor_info_array[i].pid == 0 )
 		{
@@ -820,7 +849,7 @@ int CoconutMonitor( void *pv )
 			if( errno == EINTR )
 				continue;
 			ErrorLog( __FILE__ , __LINE__ , "waitpid failed , errno[%d]" , errno );
-			goto E4;
+			goto E5;
 		}
 		
 		/* 判断是否正常结束 */
@@ -846,7 +875,7 @@ int CoconutMonitor( void *pv )
 		if( i >= p_env->processor_count )
 		{
 			ErrorLog( __FILE__ , __LINE__ , "unknow pid[%d]" , pid );
-			goto E4;
+			goto E5;
 		}
 		
 		/* 创建工作进程 */
@@ -854,7 +883,7 @@ int CoconutMonitor( void *pv )
 		if( nret )
 		{
 			ErrorLog( __FILE__ , __LINE__ , "pipe failed , errno[%d]" , errno );
-			goto E4;
+			goto E5;
 		}
 		else
 		{
@@ -865,7 +894,7 @@ int CoconutMonitor( void *pv )
 		if( p_env->processor_info_array[i].pid == -1 )
 		{
 			ErrorLog( __FILE__ , __LINE__ , "fork failed , errno[%d]" , errno );
-			goto E4;
+			goto E5;
 		}
 		else if( p_env->processor_info_array[i].pid == 0 )
 		{
@@ -902,6 +931,13 @@ int CoconutMonitor( void *pv )
 		pid = waitpid( -1 , & status , 0 ) ;
 	}
 	
+E5 :
+	/* 销毁epoll池 */
+	for( i = 0 ; i < p_env->processor_count ; i++ )
+	{
+		close( p_env->processor_info_array[i].epoll_fd );
+	}
+	
 E4 :
 	/* 断开共享内存 */
 	shmdt( p_env->serial_space_shm.base );
@@ -922,7 +958,7 @@ E1 :
 	
 static void usage()
 {
-	printf( "coconut v0.0.1\n" );
+	printf( "coconut v0.0.2.0\n" );
 	printf( "Copyright by calvin 2017\n" );
 	printf( "USAGE : coconut -r (reserve) -s (server_no) -p (listen_port) [ -c (processor_count) ]\n" );
 	return;
@@ -990,7 +1026,7 @@ int main( int argc , char *argv[] )
 		InitSequence( & env );
 		
 		/* 进入服务器主函数 */
-		nret = BindDaemonServer( & CoconutMonitor , (void*) & env ) ;
+		nret = BindDaemonServer( & CoconutMonitor , (void*) & env , 1 ) ;
 		if( nret )
 		{
 			printf( "Convert to daemon failed[%d] , errno[%d]\n" , nret , errno );
