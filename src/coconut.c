@@ -1169,7 +1169,7 @@ int main( int argc , char *argv[] )
 			{
 				env.processor_count = atoi(argv[++i]) ;
 			}
-			else if( strcmp( argv[i] , "--log-lelve" ) == 0 && i + 1 < argc )
+			else if( strcmp( argv[i] , "--log-level" ) == 0 && i + 1 < argc )
 			{
 				env.log_level = ConvertLogLevel( argv[++i] ) ;
 				if( env.log_level == -1 )
@@ -1190,7 +1190,7 @@ int main( int argc , char *argv[] )
 			env.log_level = LOGLEVEL_WARN ;
 		}
 		
-		if( env.listen_port <= 0 )
+		if( env.listen_port < 0 )
 		{
 			printf( "Invalid command parameter 'listen_port'\n" );
 			usage();
