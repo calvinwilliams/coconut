@@ -11,10 +11,14 @@
 #define __USE_GNU
 #include <sched.h>
 
+#include "list.h"
 #include "LOGC.h"
 #include "fasterhttp.h"
 
 int	g_SIGTERM_flag = 0 ;
+
+/* 每次预分配客户端会话数组 */
+#define PREALLOC_ACCEPTED_SESSION_ARRAY_SIZE	100
 
 /* 每轮捕获epoll事件最大值 */
 #define MAX_EPOLL_EVENTS		1024
@@ -54,6 +58,17 @@ struct AcceptedSession
 	struct NetAddress	netaddr ;
 	
 	struct HttpEnv		*http ;
+	
+	struct list_head	unused_node ;
+} ;
+
+/* 客户端连接会话物理结构 */
+struct AcceptedSessionArray
+{
+	struct AcceptedSession	*accepted_session_array ;
+	int			array_count ;
+	
+	struct list_head	prealloc_node ;
 } ;
 
 /* 管道会话结构 */
@@ -79,6 +94,7 @@ struct ServerEnv
 	uint64_t			server_no ;
 	int				listen_port ;
 	int				processor_count ;
+	int				log_level ;
 	int				cpu_affinity ;
 	struct ProcessorInfo
 	{
@@ -93,7 +109,10 @@ struct ServerEnv
 	
 	struct ListenSession		listen_session ;
 	
-	char				id[ 64 + 1 ] ;
+	struct AcceptedSessionArray	accepted_session_array_list ;
+	struct AcceptedSession		accepted_session_unused_list ;
+	
+	char				id[ 16 + 1 ] ;
 } ;
 
 /* 从NetAddress中设置、得到IP、PORT宏 */
@@ -133,6 +152,22 @@ struct ServerEnv
 		(_netaddr_).remote_port = (int)ntohs( (_netaddr_).remote_addr.sin_port ) ; \
 	} \
 	}
+
+static int ConvertLogLevel( char *log_level_desc )
+{
+	if( strcmp( log_level_desc , "DEBUG" ) == 0 )
+		return LOGLEVEL_DEBUG ;
+	else if( strcmp( log_level_desc , "INFO" ) == 0 )
+		return LOGLEVEL_INFO ;
+	else if( strcmp( log_level_desc , "WARN" ) == 0 )
+		return LOGLEVEL_WARN ;
+	else if( strcmp( log_level_desc , "ERROR" ) == 0 )
+		return LOGLEVEL_ERROR ;
+	else if( strcmp( log_level_desc , "FATAL" ) == 0 )
+		return LOGLEVEL_FATAL ;
+	else
+		return -1;
+}
 
 /* 转换当前进程为守护进程 */
 static int BindDaemonServer( int (* ServerMain)( void *pv ) , void *pv , int close_flag )
@@ -177,6 +212,7 @@ static int BindDaemonServer( int (* ServerMain)( void *pv ) , void *pv , int clo
 	return 0;
 }
 
+/* 绑定CPU亲缘性 */
 int BindCpuAffinity( int processor_no )
 {
 	cpu_set_t	cpu_mask ;
@@ -286,7 +322,7 @@ static int OnProcess( struct ServerEnv *p_env , struct AcceptedSession *p_accept
 			, "Content-length: %d" HTTP_RETURN_NEWLINE
 			HTTP_RETURN_NEWLINE
 			"%s" HTTP_RETURN_NEWLINE
-			, strlen(p_env->id) + 2
+			, sizeof(p_env->id)-1
 			, p_env->id ) ;
 		if( nret )
 		{
@@ -300,6 +336,112 @@ static int OnProcess( struct ServerEnv *p_env , struct AcceptedSession *p_accept
 	}
 	
 	return HTTP_OK;
+}
+
+/* 预分配空闲客户端会话结构 */
+static int IncreaseAcceptedSessions( struct ServerEnv *p_env , int increase_count )
+{
+	struct AcceptedSessionArray	*p_accepted_session_array = NULL ;
+	struct AcceptedSession		*p_accepted_session = NULL ;
+	int				i ;
+	
+	/* 批量增加空闲HTTP通讯会话 */
+	p_accepted_session_array = (struct AcceptedSessionArray *)malloc( sizeof(struct AcceptedSessionArray) ) ;
+	if( p_accepted_session_array == NULL )
+	{
+		ErrorLog( __FILE__ , __LINE__ , "malloc failed , errno[%d]" , ERRNO );
+		return -1;
+	}
+	memset( p_accepted_session_array , 0x00 , sizeof(struct AcceptedSessionArray) );
+	list_add_tail( & (p_accepted_session_array->prealloc_node) , & (p_env->accepted_session_array_list.prealloc_node) );
+	
+	p_accepted_session_array->accepted_session_array = (struct AcceptedSession *)malloc( sizeof(struct AcceptedSession) * increase_count ) ;
+	if( p_accepted_session_array->accepted_session_array == NULL )
+	{
+		ErrorLog( __FILE__ , __LINE__ , "malloc failed , errno[%d]" , ERRNO );
+		return -1;
+	}
+	memset( p_accepted_session_array->accepted_session_array , 0x00 , sizeof(struct AcceptedSession) * increase_count );
+	p_accepted_session_array->array_count = increase_count ;
+	
+	for( i = 0 , p_accepted_session = p_accepted_session_array->accepted_session_array ; i < increase_count ; i++ , p_accepted_session++ )
+	{
+		p_accepted_session->http = CreateHttpEnv() ;
+		if( p_accepted_session->http == NULL )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "CreateHttpEnv failed , errno[%d]" , ERRNO );
+			return -1;
+		}
+		SetHttpTimeout( p_accepted_session->http , -1 );
+		ResetHttpEnv( p_accepted_session->http );
+		
+		list_add_tail( & (p_accepted_session->unused_node) , & (p_env->accepted_session_unused_list.unused_node) );
+		DebugLog( __FILE__ , __LINE__ , "init accepted session[%p] http env[%p]" , p_accepted_session , p_accepted_session->http );
+	}
+	
+	return 0;
+}
+
+/* 从预分配的空闲客户端会话结构中取出一个 */
+static struct AcceptedSession *FetchAcceptedSessionUnused( struct ServerEnv *p_env )
+{
+	struct AcceptedSession	*p_accepted_session = NULL ;
+	
+	int			nret = 0 ;
+	
+	/* 如果空闲客户端会话链表为空 */
+	if( list_empty( & (p_env->accepted_session_unused_list.unused_node) ) )
+	{
+		nret = IncreaseAcceptedSessions( p_env , PREALLOC_ACCEPTED_SESSION_ARRAY_SIZE ) ;
+		if( nret )
+			return NULL;
+	}
+	
+	/* 从空闲HTTP通讯会话链表中移出一个会话，并返回之 */
+	p_accepted_session = list_first_entry( & (p_env->accepted_session_unused_list.unused_node) , struct AcceptedSession , unused_node ) ;
+	list_del( & (p_accepted_session->unused_node) );
+	
+	ResetHttpEnv( p_accepted_session->http ) ;
+	
+	DebugLog( __FILE__ , __LINE__ , "fetch accepted session[%p] http env[%p]" , p_accepted_session , p_accepted_session->http );
+	
+	return p_accepted_session;
+}
+
+/* 把当前客户端会话放回空闲链表中去 */
+static void SetAcceptedSessionUnused( struct ServerEnv *p_env , struct AcceptedSession *p_accepted_session )
+{
+	DebugLog( __FILE__ , __LINE__ , "reset accepted session[%p] http env[%p]" , p_accepted_session , p_accepted_session->http );
+	
+	/* 把当前工作HTTP通讯会话移到空闲HTTP通讯会话链表中 */
+	list_add_tail( & (p_accepted_session->unused_node) , & (p_env->accepted_session_unused_list.unused_node) );
+	
+	return;
+}
+
+/* 销毁所有客户端物理会话结构 */
+static void FreeAllAcceptedSessionArray( struct ServerEnv *p_env )
+{
+	struct list_head		*p_curr = NULL , *p_next = NULL ;
+	int				i ;
+	struct AcceptedSessionArray	*p_accepted_session_array = NULL ;
+	struct AcceptedSession		*p_accepted_session = NULL ;
+	
+	list_for_each_safe( p_curr , p_next , & (p_env->accepted_session_array_list.prealloc_node) )
+	{
+		p_accepted_session_array = container_of( p_curr , struct AcceptedSessionArray , prealloc_node ) ;
+		list_del( & (p_accepted_session_array->prealloc_node) );
+		
+		for( i = 0 , p_accepted_session = p_accepted_session_array->accepted_session_array ; i < p_accepted_session_array->array_count ; i++ , p_accepted_session++ )
+		{
+			DestroyHttpEnv( p_accepted_session->http );
+		}
+		
+		free( p_accepted_session_array->accepted_session_array );
+		free( p_accepted_session_array );
+	}
+	
+	return;
 }
 
 /* 处理接受新连接事件 */
@@ -316,6 +458,7 @@ static int OnAcceptingSocket( struct ServerEnv *p_env , struct ListenSession *p_
 	while(1)
 	{
 		/* 接受新连接 */
+		memset( & accepted_session , 0x00 , sizeof(struct AcceptedSession) );
 		accept_addr_len = sizeof(struct sockaddr) ;
 		accepted_session.netaddr.sock = accept( p_listen_session->netaddr.sock , (struct sockaddr *) & (accepted_session.netaddr.addr) , & accept_addr_len ) ;
 		if( accepted_session.netaddr.sock == -1 )
@@ -326,29 +469,23 @@ static int OnAcceptingSocket( struct ServerEnv *p_env , struct ListenSession *p_
 			return 1;
 		}
 		
-		SetHttpNonblock( accepted_session.netaddr.sock );
-		SetHttpNodelay( accepted_session.netaddr.sock , 1 );
-		
-		GETNETADDRESS( accepted_session.netaddr )
-		GETNETADDRESS_REMOTE( accepted_session.netaddr )
-		
-		/* 创建HTTP环境 */
-		accepted_session.http = CreateHttpEnv() ;
-		if( accepted_session.http == NULL )
-		{
-			ErrorLog( __FILE__ , __LINE__ , "CreateHttpEnv failed , errno[%d]" , errno );
-			close( accepted_session.netaddr.sock );
-			return 1;
-		}
-		
-		/* 申请内存以存放客户端连接会话结构 */
-		p_accepted_session = (struct AcceptedSession *)malloc( sizeof(struct AcceptedSession) ) ;
+		/* 从空闲客户端会话链表中取出一个 */
+		p_accepted_session = FetchAcceptedSessionUnused( p_env ) ;
 		if( p_accepted_session == NULL )
 		{
-			ErrorLog( __FILE__ , __LINE__ , "malloc failed , errno[%d]" , errno );
+			ErrorLog( __FILE__ , __LINE__ , "FetchAcceptedSessionUnused failed , errno[%d]" , errno );
 			return 1;
 		}
-		memcpy( p_accepted_session , & accepted_session , sizeof(struct AcceptedSession) );
+		
+		p_accepted_session->netaddr.sock = accepted_session.netaddr.sock ;
+		memcpy( & (p_accepted_session->netaddr.addr) , & (accepted_session.netaddr.addr) , sizeof(struct sockaddr) );
+		
+		/* 设置通讯选项 */
+		SetHttpNonblock( p_accepted_session->netaddr.sock );
+		SetHttpNodelay( p_accepted_session->netaddr.sock , 1 );
+		
+		GETNETADDRESS( p_accepted_session->netaddr )
+		GETNETADDRESS_REMOTE( p_accepted_session->netaddr )
 		
 		/* 加入新套接字可读事件到epoll */
 		memset( & event , 0x00 , sizeof(struct epoll_event) );
@@ -378,10 +515,9 @@ static void OnClosingSocket( struct ServerEnv *p_env , struct AcceptedSession *p
 	if( p_accepted_session )
 	{
 		InfoLog( __FILE__ , __LINE__ , "close session[%d]" , p_accepted_session->netaddr.sock );
-		DestroyHttpEnv( p_accepted_session->http );
 		epoll_ctl( p_env->this_processor_info->epoll_fd , EPOLL_CTL_DEL , p_accepted_session->netaddr.sock , NULL );
 		close( p_accepted_session->netaddr.sock );
-		free( p_accepted_session );
+		SetAcceptedSessionUnused( p_env , p_accepted_session );
 	}
 	
 	return;
@@ -403,7 +539,7 @@ static int OnReceivingSocket( struct ServerEnv *p_env , struct AcceptedSession *
 	}
 	else if( nret == FASTERHTTP_INFO_TCP_CLOSE )
 	{
-		InfoLog( __FILE__ , __LINE__ , "ReceiveHttpRequestNonblock[%d] return INFO[%d]" , p_accepted_session->netaddr.sock , nret );
+		InfoLog( __FILE__ , __LINE__ , "ReceiveHttpRequestNonblock[%d] return CLOSE[%d]" , p_accepted_session->netaddr.sock , nret );
 		return 1;
 	}
 	else if( nret )
@@ -498,7 +634,7 @@ static int OnSendingSocket( struct ServerEnv *p_env , struct AcceptedSession *p_
 }
 
 /* 服务器主函数 */
-int CoconutWorker( struct ServerEnv *p_env )
+static int CoconutWorker( struct ServerEnv *p_env )
 {
 	struct epoll_event	event ;
 	struct epoll_event	events[ MAX_EPOLL_EVENTS ] ;
@@ -689,7 +825,7 @@ int CoconutWorker( struct ServerEnv *p_env )
 	return 0;
 }
 
-int CoconutMonitor( void *pv )
+static int CoconutMonitor( void *pv )
 {
 	struct ServerEnv	*p_env = (struct ServerEnv *)pv ;
 	
@@ -702,7 +838,7 @@ int CoconutMonitor( void *pv )
 	
 	int			nret = 0 ;
 	
-	SetLogLevel( LOGLEVEL_WARN );
+	SetLogLevel( p_env->log_level );
 	SetLogFile( "%s/log/coconut.log" , getenv("HOME") );
 	
 	InfoLog( __FILE__ , __LINE__ , "--- coconut begin ---" );
@@ -808,6 +944,22 @@ int CoconutMonitor( void *pv )
 		InfoLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add listen_session[%d] ok" , p_env->processor_info_array[0].epoll_fd , p_env->listen_session.netaddr.sock );
 	}
 	
+	/* 创建空闲客户端会话物理结构链表 */
+	memset( & (p_env->accepted_session_array_list) , 0x00 , sizeof(struct AcceptedSessionArray) );
+	INIT_LIST_HEAD( & (p_env->accepted_session_array_list.prealloc_node) );
+	
+	/* 创建空闲客户端会话结构链表 */
+	memset( & (p_env->accepted_session_unused_list) , 0x00 , sizeof(struct AcceptedSession) );
+	INIT_LIST_HEAD( & (p_env->accepted_session_unused_list.unused_node) );
+	
+	/* 预分配空闲客户端会话 */
+	nret = IncreaseAcceptedSessions( p_env , PREALLOC_ACCEPTED_SESSION_ARRAY_SIZE ) ;
+	if( nret )
+	{
+		ErrorLog( __FILE__ , __LINE__ , "IncreaseAcceptedSessions failed[%d] , errno[%d]" , nret , ERRNO );
+		goto E5;
+	}
+	
 	/* 设置信号处理函数 */
 	act.sa_handler = & sig_set_flag ;
 	sigemptyset( & (act.sa_mask) );
@@ -821,7 +973,7 @@ int CoconutMonitor( void *pv )
 		if( nret )
 		{
 			ErrorLog( __FILE__ , __LINE__ , "pipe failed , errno[%d]" , errno );
-			goto E5;
+			goto EE;
 		}
 		else
 		{
@@ -832,7 +984,7 @@ int CoconutMonitor( void *pv )
 		if( p_env->processor_info_array[i].pid == -1 )
 		{
 			ErrorLog( __FILE__ , __LINE__ , "fork failed , errno[%d]" , errno );
-			goto E5;
+			goto EE;
 		}
 		else if( p_env->processor_info_array[i].pid == 0 )
 		{
@@ -866,7 +1018,7 @@ int CoconutMonitor( void *pv )
 			if( errno == EINTR )
 				continue;
 			ErrorLog( __FILE__ , __LINE__ , "waitpid failed , errno[%d]" , errno );
-			goto E5;
+			goto EE;
 		}
 		
 		/* 判断是否正常结束 */
@@ -892,7 +1044,7 @@ int CoconutMonitor( void *pv )
 		if( i >= p_env->processor_count )
 		{
 			ErrorLog( __FILE__ , __LINE__ , "unknow pid[%d]" , pid );
-			goto E5;
+			goto EE;
 		}
 		
 		/* 创建工作进程 */
@@ -900,7 +1052,7 @@ int CoconutMonitor( void *pv )
 		if( nret )
 		{
 			ErrorLog( __FILE__ , __LINE__ , "pipe failed , errno[%d]" , errno );
-			goto E5;
+			goto EE;
 		}
 		else
 		{
@@ -911,7 +1063,7 @@ int CoconutMonitor( void *pv )
 		if( p_env->processor_info_array[i].pid == -1 )
 		{
 			ErrorLog( __FILE__ , __LINE__ , "fork failed , errno[%d]" , errno );
-			goto E5;
+			goto EE;
 		}
 		else if( p_env->processor_info_array[i].pid == 0 )
 		{
@@ -950,6 +1102,10 @@ int CoconutMonitor( void *pv )
 		pid = waitpid( -1 , & status , 0 ) ;
 	}
 	
+EE :
+	/* 释放所有客户端物理会话 */
+	FreeAllAcceptedSessionArray( p_env );
+	
 E5 :
 	/* 销毁epoll池 */
 	for( i = 0 ; i < p_env->processor_count ; i++ )
@@ -977,9 +1133,9 @@ E1 :
 	
 static void usage()
 {
-	printf( "coconut v0.0.2.1\n" );
+	printf( "coconut v0.0.3.0\n" );
 	printf( "Copyright by calvin 2017\n" );
-	printf( "USAGE : coconut -r (reserve) -s (server_no) -p (listen_port) [ -c (processor_count) ] [ --cpu-affinity ]\n" );
+	printf( "USAGE : coconut -r (reserve) -s (server_no) -p (listen_port) [ -c (processor_count) ] [ --log-level (DEBUG|INFO|WARN|ERROR|FATAL) ] [ --cpu-affinity ]\n" );
 	return;
 }
 
@@ -1013,10 +1169,25 @@ int main( int argc , char *argv[] )
 			{
 				env.processor_count = atoi(argv[++i]) ;
 			}
+			else if( strcmp( argv[i] , "--log-lelve" ) == 0 && i + 1 < argc )
+			{
+				env.log_level = ConvertLogLevel( argv[++i] ) ;
+				if( env.log_level == -1 )
+				{
+					printf( "Invalid command parameter 'log_level'\n" );
+					usage();
+					exit(7);
+				}
+			}
 			else if( strcmp( argv[i] , "--cpu-affinity" ) == 0 )
 			{
 				env.cpu_affinity = 1 ;
 			}
+		}
+		
+		if( env.log_level == 0 )
+		{
+			env.log_level = LOGLEVEL_WARN ;
 		}
 		
 		if( env.listen_port <= 0 )
