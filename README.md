@@ -1,4 +1,4 @@
-coconut - Distribute id generater
+coconut - Distribute sequence generator
 =================================
 Copyright by calvin<br>
 Email : calvinwilliams@163.com<br>
