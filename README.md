@@ -46,8 +46,10 @@ calvin   27015     1  0 14:59 pts/2    00:00:00 coconut -r 1 -s 2 -p 8888
 # TEST && PERFORMANCE
 
 ```Bash
-$ curl http://127.0.0.1:8888/fetch_sequence
-aR1021oWu9400000
+$ curl http://127.0.0.1:8888/fetch
+aR2011o_cWG00002
+$ curl "http://127.0.0.1:8888/explain?sequence=aR2011o_cWG00002"
+reserve: 2  server_no: 1  secondstamp: 1492962986(2017-04-23 23:56:26) serial_no: 2
 ```
 
 ```Bash

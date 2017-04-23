@@ -1,3 +1,7 @@
+0.0.4.0		2017-04-23	calvin
+		* 缩短HTTP API /fetch 用于获取序列号
+		* 新增HTTP API /explain?sequence=... 用于解释序列号
+
 0.0.3.0		2017-04-22	calvin
 		* 优化了内部内存申请释放机制
 		* 新增命令行参数--log-level控制日志等级

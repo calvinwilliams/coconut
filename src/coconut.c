@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <errno.h>
+#include <inttypes.h>
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/epoll.h>
@@ -21,13 +22,15 @@ int	g_SIGTERM_flag = 0 ;
 #define PREALLOC_ACCEPTED_SESSION_ARRAY_SIZE	100
 
 /* 每轮捕获epoll事件最大值 */
-#define MAX_EPOLL_EVENTS		1024
+#define MAX_EPOLL_EVENTS	1024
 
 /* 对外提供获取序列号URI */
-#define URI_FETCH_SEQUENCE		"/fetch_sequence"
+#define URI_FETCH		"/fetch"
+/* 对外提供解释序列号URI */
+#define URI_EXPLAIN__SEQUENCE	"/explain?sequence="
 
 /* 六十四进位制字符集 */
-static char sg_64_scale_system_charset[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-+" ;
+static char sg_64_scale_system_charset[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_" ;
 
 /* 通讯基础信息结构 */
 struct NetAddress
@@ -36,14 +39,6 @@ struct NetAddress
 	int			port ;
 	SOCKET			sock ;
 	struct sockaddr_in	addr ;
-	
-	struct sockaddr_in	local_addr ;
-	char			local_ip[ 20 + 1 ] ;
-	int			local_port ;
-	
-	struct sockaddr_in	remote_addr ;
-	char			remote_ip[ 20 + 1 ] ;
-	int			remote_port ;
 } ;
 
 /* 侦听会话结构 */
@@ -82,7 +77,7 @@ struct ShareMemory
 {
 	int			proj_id ; /* 用于计算共享内存key的ftok参数 */
 	key_t			shmkey ; /* 共享内存key */
-	int			shmid ; /* 共享内存id */
+	int			shmid ; /* 共享内存sequence_buffer */
 	void			*base ; /* 共享内存连接基地址 */
 	int			size ; /* 共享内存大小 */
 } ;
@@ -105,14 +100,15 @@ struct ServerEnv
 	} *processor_info_array , *this_processor_info ;
 	
 	struct ShareMemory		serial_space_shm ;
-	uint64_t			*p_sequence ;
+	uint64_t			*p_serial_no ;
 	
 	struct ListenSession		listen_session ;
 	
 	struct AcceptedSessionArray	accepted_session_array_list ;
 	struct AcceptedSession		accepted_session_unused_list ;
 	
-	char				id[ 16 + 1 ] ;
+	char				sequence_buffer[ 16 + 1 ] ;
+	char				explain_buffer[ 128 + 1 ] ;
 } ;
 
 /* 从NetAddress中设置、得到IP、PORT宏 */
@@ -128,30 +124,6 @@ struct ServerEnv
 #define GETNETADDRESS(_netaddr_) \
 	strcpy( (_netaddr_).ip , inet_ntoa((_netaddr_).addr.sin_addr) ); \
 	(_netaddr_).port = (int)ntohs( (_netaddr_).addr.sin_port ) ;
-
-#define GETNETADDRESS_LOCAL(_netaddr_) \
-	{ \
-	socklen_t	socklen = sizeof(struct sockaddr) ; \
-	int		nret = 0 ; \
-	nret = getsockname( (_netaddr_).sock , (struct sockaddr*)&((_netaddr_).local_addr) , & socklen ) ; \
-	if( nret == 0 ) \
-	{ \
-		strcpy( (_netaddr_).local_ip , inet_ntoa((_netaddr_).local_addr.sin_addr) ); \
-		(_netaddr_).local_port = (int)ntohs( (_netaddr_).local_addr.sin_port ) ; \
-	} \
-	}
-
-#define GETNETADDRESS_REMOTE(_netaddr_) \
-	{ \
-	socklen_t	socklen = sizeof(struct sockaddr) ; \
-	int		nret = 0 ; \
-	nret = getpeername( (_netaddr_).sock , (struct sockaddr*)&((_netaddr_).remote_addr) , & socklen ) ; \
-	if( nret == 0 ) \
-	{ \
-		strcpy( (_netaddr_).remote_ip , inet_ntoa((_netaddr_).remote_addr.sin_addr) ); \
-		(_netaddr_).remote_port = (int)ntohs( (_netaddr_).remote_addr.sin_port ) ; \
-	} \
-	}
 
 static int ConvertLogLevel( char *log_level_desc )
 {
@@ -239,11 +211,11 @@ static void sig_set_flag( int sig_no )
 /* 初始化序列号前半段 */
 static void InitSequence( struct ServerEnv *p_env )
 {
-	uint64_t	reserve_region_length = 1 ;
-	uint64_t	host_no_region_length = 2 ;
-	uint64_t	tt_region_length = 6 ;
-	uint64_t	sequence_region_length = 5 ;
 	uint64_t	index_region ;
+	uint64_t	reserve_region_length = 1 ;
+	uint64_t	server_no_region_length = 2 ;
+	uint64_t	secondstamp_region_length = 6 ;
+	uint64_t	serial_no_region_length = 5 ;
 	
 	/*
 	第一区 分区目录 2个六十四进制字符 共12个二进制位
@@ -259,16 +231,16 @@ static void InitSequence( struct ServerEnv *p_env )
 	*/
 	
 	/* 分区目录 */
-	index_region = (reserve_region_length<<9) + (host_no_region_length<<6) + (tt_region_length<<3) + (sequence_region_length) ;
-	p_env->id[0] = sg_64_scale_system_charset[(index_region>>6)&0x3F] ;
-	p_env->id[1] = sg_64_scale_system_charset[index_region&0x3F] ;
+	index_region = (reserve_region_length<<9) + (server_no_region_length<<6) + (secondstamp_region_length<<3) + (serial_no_region_length) ;
+	p_env->sequence_buffer[0] = sg_64_scale_system_charset[(index_region>>6)&0x3F] ;
+	p_env->sequence_buffer[1] = sg_64_scale_system_charset[index_region&0x3F] ;
 	
 	/* 保留区 */
-	p_env->id[2] = sg_64_scale_system_charset[p_env->reserve&0x3F] ;
+	p_env->sequence_buffer[2] = sg_64_scale_system_charset[p_env->reserve&0x3F] ;
 	
 	/* 服务器编号区 */
-	p_env->id[3] = sg_64_scale_system_charset[(p_env->server_no>>6)&0x3F] ;
-	p_env->id[4] = sg_64_scale_system_charset[p_env->server_no&0x3F] ;
+	p_env->sequence_buffer[3] = sg_64_scale_system_charset[(p_env->server_no>>6)&0x3F] ;
+	p_env->sequence_buffer[4] = sg_64_scale_system_charset[p_env->server_no&0x3F] ;
 	
 	return;
 }
@@ -277,32 +249,154 @@ static void InitSequence( struct ServerEnv *p_env )
 static void FetchSequence( struct ServerEnv *p_env )
 {
 	uint64_t	secondstamp ;
-	uint64_t	ret_sequence ;
-	// static uint64_t	ret_sequence = 0 ;
+	uint64_t	ret_serial_no ;
+	// static uint64_t	ret_serial_no = 0 ;
 	
 	/* 秒戳区 */
 	secondstamp = time( NULL );
-	p_env->id[5] = sg_64_scale_system_charset[(secondstamp>>30)&0x3F] ;
-	p_env->id[6] = sg_64_scale_system_charset[(secondstamp>>24)&0x3F] ;
-	p_env->id[7] = sg_64_scale_system_charset[(secondstamp>>18)&0x3F] ;
-	p_env->id[8] = sg_64_scale_system_charset[(secondstamp>>12)&0x3F] ;
-	p_env->id[9] = sg_64_scale_system_charset[(secondstamp>>6)&0x3F] ;
-	p_env->id[10] = sg_64_scale_system_charset[secondstamp&0x3F] ;
+	p_env->sequence_buffer[5] = sg_64_scale_system_charset[(secondstamp>>30)&0x3F] ;
+	p_env->sequence_buffer[6] = sg_64_scale_system_charset[(secondstamp>>24)&0x3F] ;
+	p_env->sequence_buffer[7] = sg_64_scale_system_charset[(secondstamp>>18)&0x3F] ;
+	p_env->sequence_buffer[8] = sg_64_scale_system_charset[(secondstamp>>12)&0x3F] ;
+	p_env->sequence_buffer[9] = sg_64_scale_system_charset[(secondstamp>>6)&0x3F] ;
+	p_env->sequence_buffer[10] = sg_64_scale_system_charset[secondstamp&0x3F] ;
 	
 	/* 序号区 */
-	ret_sequence = __sync_fetch_and_add( p_env->p_sequence , 1 ) ; /* 序号自增一 */
-	// ret_sequence++;
-	p_env->id[11] = sg_64_scale_system_charset[(ret_sequence>>24)&0x3F] ;
-	p_env->id[12] = sg_64_scale_system_charset[(ret_sequence>>18)&0x3F] ;
-	p_env->id[13] = sg_64_scale_system_charset[(ret_sequence>>12)&0x3F] ;
-	p_env->id[14] = sg_64_scale_system_charset[(ret_sequence>>6)&0x3F] ;
-	p_env->id[15] = sg_64_scale_system_charset[ret_sequence&0x3F] ;
+	ret_serial_no = __sync_fetch_and_add( p_env->p_serial_no , 1 ) ; /* 序号自增一 */
+	// ret_serial_no++;
+	p_env->sequence_buffer[11] = sg_64_scale_system_charset[(ret_serial_no>>24)&0x3F] ;
+	p_env->sequence_buffer[12] = sg_64_scale_system_charset[(ret_serial_no>>18)&0x3F] ;
+	p_env->sequence_buffer[13] = sg_64_scale_system_charset[(ret_serial_no>>12)&0x3F] ;
+	p_env->sequence_buffer[14] = sg_64_scale_system_charset[(ret_serial_no>>6)&0x3F] ;
+	p_env->sequence_buffer[15] = sg_64_scale_system_charset[ret_serial_no&0x3F] ;
 	
 	return;
 }
 
+/* 获取序列号 */
+static int ExplainSequence( struct ServerEnv *p_env , char *sequence )
+{
+	char		*pos = NULL ;
+	int		i ;
+	uint64_t	index_region ;
+	uint64_t	reserve_region_length ;
+	uint64_t	server_no_region_length ;
+	uint64_t	secondstamp_region_length ;
+	uint64_t	serial_no_region_length ;
+	
+	uint64_t	reserve ;
+	uint64_t	server_no ;
+	time_t		secondstamp ;
+	struct tm	stime ;
+	uint64_t	serial_no ;
+	
+	index_region = 0 ;
+	for( i = 0 ; i < 2 ; i++ )
+	{
+		if( (*sequence) == '\0' )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "sequence too short" );
+			return HTTP_BAD_REQUEST;
+		}
+		pos = strchr( sg_64_scale_system_charset , (*sequence) ) ;
+		if( pos == NULL )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "sequence invalid , char[%c]" , (*sequence) );
+			return HTTP_BAD_REQUEST;
+		}
+		index_region = (index_region<<6) + (pos-sg_64_scale_system_charset) ;
+		sequence++;
+	}
+	
+	serial_no_region_length = (index_region&0x7) ; index_region >>= 3 ;
+	secondstamp_region_length = (index_region&0x7) ; index_region >>= 3 ;
+	server_no_region_length = (index_region&0x7) ; index_region >>= 3 ;
+	reserve_region_length = (index_region&0x7) ; index_region >>= 3 ;
+	
+	reserve = 0 ;
+	for( i = 0 ; i < reserve_region_length ; i++ )
+	{
+		if( (*sequence) == '\0' )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "sequence too short" );
+			return HTTP_BAD_REQUEST;
+		}
+		pos = strchr( sg_64_scale_system_charset , (*sequence) ) ;
+		if( pos == NULL )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "sequence invalid , char[%c]" , (*sequence) );
+			return HTTP_BAD_REQUEST;
+		}
+		reserve = (reserve<<6) + (pos-sg_64_scale_system_charset) ;
+		sequence++;
+	}
+	
+	server_no = 0 ;
+	for( i = 0 ; i < server_no_region_length ; i++ )
+	{
+		if( (*sequence) == '\0' )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "sequence too short" );
+			return HTTP_BAD_REQUEST;
+		}
+		pos = strchr( sg_64_scale_system_charset , (*sequence) ) ;
+		if( pos == NULL )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "sequence invalid , char[%c]" , (*sequence) );
+			return HTTP_BAD_REQUEST;
+		}
+		server_no = (server_no<<6) + (pos-sg_64_scale_system_charset) ;
+		sequence++;
+	}
+	
+	secondstamp = 0 ;
+	for( i = 0 ; i < secondstamp_region_length ; i++ )
+	{
+		if( (*sequence) == '\0' )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "sequence too short" );
+			return HTTP_BAD_REQUEST;
+		}
+		pos = strchr( sg_64_scale_system_charset , (*sequence) ) ;
+		if( pos == NULL )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "sequence invalid , char[%c]" , (*sequence) );
+			return HTTP_BAD_REQUEST;
+		}
+		secondstamp = (secondstamp<<6) + (pos-sg_64_scale_system_charset) ;
+		sequence++;
+	}
+	
+	serial_no = 0 ;
+	for( i = 0 ; i < serial_no_region_length ; i++ )
+	{
+		if( (*sequence) == '\0' )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "sequence too short" );
+			return HTTP_BAD_REQUEST;
+		}
+		pos = strchr( sg_64_scale_system_charset , (*sequence) ) ;
+		if( pos == NULL )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "sequence invalid , char[%c]" , (*sequence) );
+			return HTTP_BAD_REQUEST;
+		}
+		serial_no = (serial_no<<6) + (pos-sg_64_scale_system_charset) ;
+		sequence++;
+	}
+	
+	memset( p_env->explain_buffer , 0x00 , sizeof(p_env->explain_buffer) );
+	localtime_r( & secondstamp , & stime );
+	snprintf( p_env->explain_buffer , sizeof(p_env->explain_buffer)-1 , "reserve: %"PRIu64"  server_no: %"PRIu64"  secondstamp: %ld (%04d-%02d-%02d %02d:%02d:%02d)  serial_no: %"PRIu64"\n"
+		, reserve , server_no , (long)secondstamp
+		, stime.tm_year+1900 , stime.tm_mon+1 , stime.tm_mday , stime.tm_hour , stime.tm_min , stime.tm_sec
+		, serial_no );
+	
+	return HTTP_OK;
+}
+
 /* 应用层处理 */
-static int OnProcess( struct ServerEnv *p_env , struct AcceptedSession *p_accepted_session )
+static int DispatchProcess( struct ServerEnv *p_env , struct AcceptedSession *p_accepted_session )
 {
 	char			*uri = NULL ;
 	int			uri_len ;
@@ -314,16 +408,35 @@ static int OnProcess( struct ServerEnv *p_env , struct AcceptedSession *p_accept
 	InfoLog( __FILE__ , __LINE__ , "uri[%.*s]" , uri_len , uri );
 	
 	/* 获取序列号 */
-	if( uri_len == sizeof(URI_FETCH_SEQUENCE)-1 && MEMCMP( uri , == , URI_FETCH_SEQUENCE , uri_len ) )
+	if( uri_len == sizeof(URI_FETCH)-1 && MEMCMP( uri , == , URI_FETCH , uri_len ) )
 	{
 		FetchSequence( p_env );
 		
 		nret = FormatHttpResponseStartLine( HTTP_OK , p_accepted_session->http , 0
 			, "Content-length: %d" HTTP_RETURN_NEWLINE
 			HTTP_RETURN_NEWLINE
+			"%s\n" HTTP_RETURN_NEWLINE
+			, sizeof(p_env->sequence_buffer)
+			, p_env->sequence_buffer ) ;
+		if( nret )
+		{
+			ErrorLog( __FILE__ , __LINE__ , "FormatHttpResponseStartLine failed[%d]" , nret );
+			return HTTP_INTERNAL_SERVER_ERROR;
+		}
+	}
+	/* 获取序列号 */
+	else if( MEMCMP( uri , == , URI_EXPLAIN__SEQUENCE , sizeof(URI_EXPLAIN__SEQUENCE)-1 ) )
+	{
+		nret = ExplainSequence( p_env , uri+sizeof(URI_EXPLAIN__SEQUENCE)-1 ) ;
+		if( nret != HTTP_OK )
+			return nret;
+		
+		nret = FormatHttpResponseStartLine( HTTP_OK , p_accepted_session->http , 0
+			, "Content-length: %d" HTTP_RETURN_NEWLINE
+			HTTP_RETURN_NEWLINE
 			"%s" HTTP_RETURN_NEWLINE
-			, sizeof(p_env->id)-1
-			, p_env->id ) ;
+			, strlen(p_env->explain_buffer)
+			, p_env->explain_buffer ) ;
 		if( nret )
 		{
 			ErrorLog( __FILE__ , __LINE__ , "FormatHttpResponseStartLine failed[%d]" , nret );
@@ -485,7 +598,6 @@ static int OnAcceptingSocket( struct ServerEnv *p_env , struct ListenSession *p_
 		SetHttpNodelay( p_accepted_session->netaddr.sock , 1 );
 		
 		GETNETADDRESS( p_accepted_session->netaddr )
-		GETNETADDRESS_REMOTE( p_accepted_session->netaddr )
 		
 		/* 加入新套接字可读事件到epoll */
 		memset( & event , 0x00 , sizeof(struct epoll_event) );
@@ -553,7 +665,7 @@ static int OnReceivingSocket( struct ServerEnv *p_env , struct AcceptedSession *
 		DebugLog( __FILE__ , __LINE__ , "ReceiveHttpRequestNonblock[%d] return DONE" , p_accepted_session->netaddr.sock );
 		
 		/* 调用应用层 */
-		nret = OnProcess( p_env , p_accepted_session ) ;
+		nret = DispatchProcess( p_env , p_accepted_session ) ;
 		if( nret != HTTP_OK )
 		{
 			nret = FormatHttpResponseStartLine( nret , p_accepted_session->http , 1 , NULL ) ;
@@ -911,8 +1023,8 @@ static int CoconutMonitor( void *pv )
 	{
 		InfoLog( __FILE__ , __LINE__ , "shmat ok , shmid[%d] base[%p]" , p_env->serial_space_shm.shmid , p_env->serial_space_shm.base );
 	}
-	p_env->p_sequence = (uint64_t*)(p_env->serial_space_shm.base) ;
-	*(p_env->p_sequence) = 0 ;
+	p_env->p_serial_no = (uint64_t*)(p_env->serial_space_shm.base) ;
+	*(p_env->p_serial_no) = 0 ;
 	
 	/* 创建epoll池 */
 	for( i = 0 ; i < p_env->processor_count ; i++ )
@@ -1133,7 +1245,7 @@ E1 :
 	
 static void usage()
 {
-	printf( "coconut v0.0.3.0\n" );
+	printf( "coconut v0.0.4.0\n" );
 	printf( "Copyright by calvin 2017\n" );
 	printf( "USAGE : coconut -r (reserve) -s (server_no) -p (listen_port) [ -c (processor_count) ] [ --log-level (DEBUG|INFO|WARN|ERROR|FATAL) ] [ --cpu-affinity ]\n" );
 	return;
