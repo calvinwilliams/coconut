@@ -1,3 +1,7 @@
+0.0.4.1		2017-04-26	calvin
+		* 优化了单进程时的侦听端口处理
+		* 最小化了HTTP缓冲区
+
 0.0.4.0		2017-04-23	calvin
 		* 缩短HTTP API /fetch 用于获取序列号
 		* 新增HTTP API /explain?sequence=... 用于解释序列号

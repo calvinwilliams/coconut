@@ -834,25 +834,28 @@ static int CoconutWorker( struct ServerEnv *p_env )
 						DebugLog( __FILE__ , __LINE__ , "OnAcceptingSocket ok" );
 					}
 					
-					/* 转移侦听可读事件到下一个epoll */
-					j = p_env->this_processor_info - p_env->processor_info_array + 1 ;
-					if( j >= p_env->processor_count )
-						j = 0 ;
-					
-					epoll_ctl( p_env->this_processor_info->epoll_fd , EPOLL_CTL_DEL , p_env->listen_session.netaddr.sock , NULL );
-					
-					memset( & event , 0x00 , sizeof(struct epoll_event) );
-					event.events = EPOLLIN | EPOLLERR ;
-					event.data.ptr = & (p_env->listen_session) ;
-					nret = epoll_ctl( p_env->processor_info_array[j].epoll_fd , EPOLL_CTL_ADD , p_env->listen_session.netaddr.sock , & event ) ;
-					if( nret == -1 )
+					if( p_env->processor_count > 1 )
 					{
-						ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add listen_session failed , errno[%d]" , p_env->processor_info_array[j].epoll_fd , errno );
-						return -1;
-					}
-					else
-					{
-						InfoLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add listen_session[%d] ok" , p_env->processor_info_array[j].epoll_fd , p_env->listen_session.netaddr.sock );
+						/* 转移侦听可读事件到下一个epoll */
+						j = p_env->this_processor_info - p_env->processor_info_array + 1 ;
+						if( j >= p_env->processor_count )
+							j = 0 ;
+						
+						epoll_ctl( p_env->this_processor_info->epoll_fd , EPOLL_CTL_DEL , p_env->listen_session.netaddr.sock , NULL );
+						
+						memset( & event , 0x00 , sizeof(struct epoll_event) );
+						event.events = EPOLLIN | EPOLLERR ;
+						event.data.ptr = & (p_env->listen_session) ;
+						nret = epoll_ctl( p_env->processor_info_array[j].epoll_fd , EPOLL_CTL_ADD , p_env->listen_session.netaddr.sock , & event ) ;
+						if( nret == -1 )
+						{
+							ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add listen_session failed , errno[%d]" , p_env->processor_info_array[j].epoll_fd , errno );
+							return -1;
+						}
+						else
+						{
+							InfoLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add listen_session[%d] ok" , p_env->processor_info_array[j].epoll_fd , p_env->listen_session.netaddr.sock );
+						}
 					}
 				}
 				/* 出错事件 */
