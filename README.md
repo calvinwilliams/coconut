@@ -19,10 +19,11 @@ Checking connectivity... done.
 $ cd coconut
 $ cd src
 $ make -f makefile.Linux install
-gcc -g -fPIC -O2 -Wall -Werror -fno-strict-aliasing -I. -I/home/calvin/include  -c coconut.c
-gcc -g -fPIC -O2 -Wall -Werror -fno-strict-aliasing -I. -I/home/calvin/include  -c fasterhttp.c
 gcc -g -fPIC -O2 -Wall -Werror -fno-strict-aliasing -I. -I/home/calvin/include  -c LOGC.c
-gcc -g -fPIC -O2 -Wall -Werror -fno-strict-aliasing -o coconut coconut.o fasterhttp.o LOGC.o -L. -L/home/calvin/lib -lcrypto -lssl -lz 
+gcc -g -fPIC -O2 -Wall -Werror -fno-strict-aliasing -I. -I/home/calvin/include  -c fasterhttp.c
+gcc -g -fPIC -O2 -Wall -Werror -fno-strict-aliasing -I. -I/home/calvin/include  -c tcpdaemon_lib.c
+gcc -g -fPIC -O2 -Wall -Werror -fno-strict-aliasing -I. -I/home/calvin/include  -c coconut.c
+gcc -g -fPIC -O2 -Wall -Werror -fno-strict-aliasing -o coconut coconut.o fasterhttp.o LOGC.o -L. -L/home/calvin/lib -lcrypto -lssl -lz -ldl
 cp -rf coconut /home/calvin/bin/
 $ ls -l ~/bin/coconut
 -rwxrwxr-x 1 calvin calvin 138477 04-09 14:38 /home/calvin/bin/coconut
