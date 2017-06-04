@@ -8,10 +8,11 @@
 ###### 源文件配置区
 #@ c_FILE
 c_FILE		=	\
-			coconut.c \
-			fasterhttp.c \
-			LOGC.c \
 			list.c \
+			LOGC.c \
+			fasterhttp.c \
+			tcpdaemon_lib.c \
+			coconut.c \
 
 ###### 目标文件、安装目录配置区
 include makeinstall
@@ -20,12 +21,14 @@ BININST		=	$(_BININST)
 
 ###### 编译选项
 CFLAGS		=	$(_CFLAGS) \
+			-std=gnu99 \
 
 ###### 链接选项
 LFLAGS		=	$(_LFLAGS) \
 			-lcrypto \
 			-lssl \
 			-lz \
+			-ldl \
 
 ###### 额外宏定义区
 CLEAN_ADDITION	=
