@@ -12,6 +12,7 @@ c_FILE		=	\
 			LOGC.c \
 			fasterhttp.c \
 			tcpdaemon_lib.c \
+			rbtree.c rbtree_ins.o \
 			coconut.c \
 
 ###### 目标文件、安装目录配置区
