@@ -355,15 +355,11 @@ static int DispatchProcess( struct CoconutServerEnvironment *p_env , struct Acce
 static int OnAcceptingSocket( struct TcpdaemonServerEnvirment *p , struct CoconutServerEnvironment *p_env , int sock , struct sockaddr *p_addr )
 {
 	struct AcceptedSession	*p_accepted_session = NULL ;
-	int			epoll_fd = TDGetThisEpoll(p) ;
-	struct epoll_event	event ;
 	
-	int			nret = 0 ;
-	
-	/*  */
+	/* 申请内存以存放已连接会话 */
 	p_accepted_session = (struct AcceptedSession *)malloc( sizeof(struct AcceptedSession) ) ;
 	if( p_accepted_session == NULL )
-		return -1;
+		return TCPMAIN_RETURN_ERROR;
 	memset( p_accepted_session , 0x00 , sizeof(struct AcceptedSession) );
 	
 	p_accepted_session->netaddr.sock = sock ;
@@ -374,54 +370,33 @@ static int OnAcceptingSocket( struct TcpdaemonServerEnvirment *p , struct Coconu
 	if( p_accepted_session->http == NULL )
 	{
 		ErrorLog( __FILE__ , __LINE__ , "CreateHttpEnv failed , errno[%d]" , ERRNO );
-		return -1;
+		return TCPMAIN_RETURN_ERROR;
 	}
 	SetHttpTimeout( p_accepted_session->http , -1 );
 	ResetHttpEnv( p_accepted_session->http );
 	
-	/* 加入新套接字可读事件到epoll */
-	memset( & event , 0x00 , sizeof(struct epoll_event) );
-	event.events = EPOLLIN | EPOLLERR ;
-	event.data.ptr = p_accepted_session ;
-	nret = epoll_ctl( epoll_fd , EPOLL_CTL_ADD , p_accepted_session->netaddr.sock , & event ) ;
-	if( nret == -1 )
-	{
-		ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add[%d] failed , errno[%d]" , epoll_fd , p_accepted_session->netaddr.sock , errno );
-		DestroyHttpEnv( p_accepted_session->http );
-		close( p_accepted_session->netaddr.sock );
-		free( p_accepted_session );
-		return 1;
-	}
-	else
-	{
-		DebugLog( __FILE__ , __LINE__ , "epoll_ctl[%d] add[%d] ok" , epoll_fd , p_accepted_session->netaddr.sock );
-	}
+	/* 设置已连接会话数据结构 */
+	TDSetIoMultiplexDataPtr( p , p_accepted_session );
 	
-	return 0;
+	/* 等待读事件 */
+	return TCPMAIN_RETURN_WAITINGFOR_RECEIVING;
 }
 
 /* 主动关闭套接字 */
 static int OnClosingSocket( struct TcpdaemonServerEnvirment *p , struct CoconutServerEnvironment *p_env , struct AcceptedSession *p_accepted_session )
 {
-	int			epoll_fd = TDGetThisEpoll(p) ;
+	/* 释放已连接会话 */
+	InfoLog( __FILE__ , __LINE__ , "close session[%d]" , p_accepted_session->netaddr.sock );
+	DestroyHttpEnv( p_accepted_session->http );
+	free( p_accepted_session );
 	
-	if( p_accepted_session )
-	{
-		InfoLog( __FILE__ , __LINE__ , "close session[%d]" , p_accepted_session->netaddr.sock );
-		epoll_ctl( epoll_fd , EPOLL_CTL_DEL , p_accepted_session->netaddr.sock , NULL );
-		DestroyHttpEnv( p_accepted_session->http );
-		close( p_accepted_session->netaddr.sock );
-	}
-	
-	return 0;
+	/* 等待下一任意事件 */
+	return TCPMAIN_RETURN_WAITINGFOR_NEXT;
 }
 
 /* 接收客户端套接字数据 */
 static int OnReceivingSocket( struct TcpdaemonServerEnvirment *p , struct CoconutServerEnvironment *p_env , struct AcceptedSession *p_accepted_session )
 {
-	int			epoll_fd = TDGetThisEpoll(p) ;
-	struct epoll_event	event ;
-	
 	int			nret = 0 ;
 	
 	/* 接收请求数据 */
@@ -429,17 +404,17 @@ static int OnReceivingSocket( struct TcpdaemonServerEnvirment *p , struct Coconu
 	if( nret == FASTERHTTP_INFO_NEED_MORE_HTTP_BUFFER )
 	{
 		DebugLog( __FILE__ , __LINE__ , "ReceiveHttpRequestNonblock[%d] return FASTERHTTP_INFO_NEED_MORE_HTTP_BUFFER" , p_accepted_session->netaddr.sock );
-		return 0;
+		return TCPMAIN_RETURN_WAITINGFOR_NEXT;
 	}
 	else if( nret == FASTERHTTP_INFO_TCP_CLOSE )
 	{
 		InfoLog( __FILE__ , __LINE__ , "ReceiveHttpRequestNonblock[%d] return CLOSE[%d]" , p_accepted_session->netaddr.sock , nret );
-		return 1;
+		return TCPMAIN_RETURN_CLOSE;
 	}
 	else if( nret )
 	{
 		ErrorLog( __FILE__ , __LINE__ , "ReceiveHttpRequestNonblock[%d] return ERROR[%d]" , p_accepted_session->netaddr.sock , nret );
-		return 1;
+		return TCPMAIN_RETURN_ERROR;
 	}
 	else
 	{
@@ -454,35 +429,17 @@ static int OnReceivingSocket( struct TcpdaemonServerEnvirment *p , struct Coconu
 			if( nret )
 			{
 				ErrorLog( __FILE__ , __LINE__ , "FormatHttpResponseStartLine failed[%d]" , nret );
-				return 1;
+				return TCPMAIN_RETURN_ERROR;
 			}
 		}
 		
-		/* 切换为可写事件 */
-		memset( & event , 0x00 , sizeof(struct epoll_event) );
-		event.events = EPOLLOUT | EPOLLERR ;
-		event.data.ptr = p_accepted_session ;
-		nret = epoll_ctl( epoll_fd , EPOLL_CTL_MOD , p_accepted_session->netaddr.sock , & event ) ;
-		if( nret == -1 )
-		{
-			ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] modify[%d] failed , errno[%d]" , epoll_fd , p_accepted_session->netaddr.sock , errno );
-			return 1;
-		}
-		else
-		{
-			DebugLog( __FILE__ , __LINE__ , "epoll_ctl[%d] modify[%d] ok" , epoll_fd , p_accepted_session->netaddr.sock );
-		}
+		return TCPMAIN_RETURN_WAITINGFOR_SENDING;
 	}
-	
-	return 0;
 }
 
 /* 发送客户端套接字数据 */
 static int OnSendingSocket( struct TcpdaemonServerEnvirment *p , struct CoconutServerEnvironment *p_env , struct AcceptedSession *p_accepted_session )
 {
-	int			epoll_fd = TDGetThisEpoll(p) ;
-	struct epoll_event	event ;
-	
 	int			nret = 0 ;
 	
 	/* 发送响应数据 */
@@ -490,42 +447,25 @@ static int OnSendingSocket( struct TcpdaemonServerEnvirment *p , struct CoconutS
 	if( nret == FASTERHTTP_INFO_TCP_SEND_WOULDBLOCK )
 	{
 		DebugLog( __FILE__ , __LINE__ , "SendHttpResponseNonblock[%d] return FASTERHTTP_INFO_TCP_SEND_WOULDBLOCK" , p_accepted_session->netaddr.sock );
-		return 0;
+		return TCPMAIN_RETURN_WAITINGFOR_NEXT;
 	}
 	else if( nret )
 	{
 		ErrorLog( __FILE__ , __LINE__ , "SendHttpResponseNonblock[%d] return ERROR[%d]" , p_accepted_session->netaddr.sock , nret );
-		return 1;
+		return TCPMAIN_RETURN_ERROR;
 	}
 	else
 	{
 		DebugLog( __FILE__ , __LINE__ , "SendHttpResponseNonblock[%d] return DONE" , p_accepted_session->netaddr.sock );
 		
 		if( ! CheckHttpKeepAlive(p_accepted_session->http) )
-		{
-			return 1;
-		}
+			return TCPMAIN_RETURN_CLOSE;
 		
 		SetHttpTimeout( p_accepted_session->http , -1 );
 		ResetHttpEnv( p_accepted_session->http ) ;
 		
-		/* 切换为可读事件 */
-		memset( & event , 0x00 , sizeof(struct epoll_event) );
-		event.events = EPOLLIN | EPOLLERR ;
-		event.data.ptr = p_accepted_session ;
-		nret = epoll_ctl( epoll_fd , EPOLL_CTL_MOD , p_accepted_session->netaddr.sock , & event ) ;
-		if( nret == -1 )
-		{
-			ErrorLog( __FILE__ , __LINE__ , "epoll_ctl[%d] modify[%d] failed , errno[%d]" , epoll_fd , p_accepted_session->netaddr.sock , errno );
-			return 1;
-		}
-		else
-		{
-			DebugLog( __FILE__ , __LINE__ , "epoll_ctl[%d] modify[%d] ok" , epoll_fd , p_accepted_session->netaddr.sock );
-		}
+		return TCPMAIN_RETURN_WAITINGFOR_RECEIVING;
 	}
-	
-	return 0;
 }
 
 static func_tcpmain tcpmain ;
@@ -544,7 +484,7 @@ int tcpmain( struct TcpdaemonServerEnvirment *p , int sock , void *p_addr )
 		case IOMP_ON_SENDING_SOCKET :
 			return OnSendingSocket( p , p_env , (struct AcceptedSession *)p_addr ) ;
 		default :
-			return -1;
+			return TCPMAIN_RETURN_ERROR;
 	}
 }
 
@@ -655,6 +595,7 @@ int main( int argc , char *argv[] )
 		snprintf( para.log_pathfilename , sizeof(para.log_pathfilename)-1 , "%s/log/coconut.log" , getenv("HOME") );
 		para.log_level = p_env->log_level ;
 		strcpy( para.server_model , "IOMP" );
+		para.timeout_seconds = 60 ;
 		para.process_count = p_env->processor_count ;
 		strcpy( para.ip , "0" );
 		para.port = p_env->listen_port ;
