@@ -490,7 +490,7 @@ int tcpmain( struct TcpdaemonServerEnvirment *p , int sock , void *p_addr )
 
 static void usage()
 {
-	printf( "coconut v0.0.6.0\n" );
+	printf( "coconut v0.0.6.1\n" );
 	printf( "Copyright by calvin 2017\n" );
 	printf( "USAGE : coconut -r (reserve) -s (server_no) -p (listen_port) [ -c (processor_count) ] [ --log-level (DEBUG|INFO|WARN|ERROR|FATAL) ] [ --cpu-affinity ]\n" );
 	return;
