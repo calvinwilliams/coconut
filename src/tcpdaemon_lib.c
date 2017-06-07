@@ -324,16 +324,19 @@ static unsigned int tcpdaemon_IOMP_worker( void *pv )
 			DebugLog( __FILE__ , __LINE__ , "tcpdaemon_IOMP_worker(%d) | epoll_wait[%d] return[%d]events" , p_env->index , p_env->this_epoll_fd , epoll_nfds );
 		}
 		
-		now_timestamp = time(NULL) ;
-		while(1)
+		if( p_env->p_para->timeout_seconds > 0 )
 		{
-			p_session = GetTimeoutAcceptedSession( p_env , now_timestamp ) ;
-			if( p_session == NULL )
-				break;
-			
-			WarnLog( __FILE__ , __LINE__ , "SOCKET TIMEOUT ------ sock[%d] io_multiplex_data_ptr[%p]" , p_session->sock , p_session->io_multiplex_data_ptr );
-			/* 调用关闭连接回调函数 */
-			CloseAcceptedSession( p_env , p_session );
+			now_timestamp = time(NULL) ;
+			while(1)
+			{
+				p_session = GetTimeoutAcceptedSession( p_env , now_timestamp ) ;
+				if( p_session == NULL )
+					break;
+				
+				WarnLog( __FILE__ , __LINE__ , "SOCKET TIMEOUT ------ sock[%d] io_multiplex_data_ptr[%p]" , p_session->sock , p_session->io_multiplex_data_ptr );
+				/* 调用关闭连接回调函数 */
+				CloseAcceptedSession( p_env , p_session );
+			}
 		}
 		
 		/* 处理所有事件 */
@@ -705,7 +708,7 @@ static int InitDaemonEnv( struct TcpdaemonServerEnvirment *p_env )
 	if( p_env->p_para->so_pathfilename[0] )
 	{
 #if ( defined __linux__ ) || ( defined __unix )
-		p_env->so_handle = dlopen( p_env->p_para->so_pathfilename , RTLD_LAZY ) ;
+		p_env->so_handle = dlopen( p_env->p_para->so_pathfilename , RTLD_NOW ) ;
 #elif ( defined _WIN32 )
 		p_env->so_handle = LoadLibrary( p_env->p_para->so_pathfilename ) ;
 #endif
@@ -1371,9 +1374,14 @@ static int CleanDaemonEnv_IOMP( struct TcpdaemonServerEnvirment *p_env )
 		free( p_env->alive_pipes );
 	}
 	
-	for( i = 0 ; i < p_env->p_para->process_count ; i++ )
+	if( p_env->epoll_array )
 	{
-		close( p_env->epoll_array[i] );
+		for( i = 0 ; i < p_env->p_para->process_count ; i++ )
+		{
+			close( p_env->epoll_array[i] );
+		}
+		
+		free( p_env->epoll_array );
 	}
 	
 	return CleanDaemonEnv( p_env );
@@ -1393,8 +1401,8 @@ int tcpdaemon_IOMP( struct TcpdaemonServerEnvirment *p_env )
 	nret = InitDaemonEnv_IOMP( p_env ) ;
 	if( nret )
 	{
-		ErrorLog( __FILE__ , __LINE__ , "init LF failed[%d]" , nret );
-		CleanDaemonEnv_LF( p_env );
+		ErrorLog( __FILE__ , __LINE__ , "init IOMP failed[%d]" , nret );
+		CleanDaemonEnv_IOMP( p_env );
 		return nret;
 	}
 	
@@ -1409,7 +1417,7 @@ int tcpdaemon_IOMP( struct TcpdaemonServerEnvirment *p_env )
 	signal( SIGCHLD , SIG_DFL );
 	
 	/* 创建工作进程池 */
-	InfoLog( __FILE__ , __LINE__ , "create tcpdaemon_LF_worker pool starting" );
+	InfoLog( __FILE__ , __LINE__ , "create tcpdaemon_IOMP_worker pool starting" );
 	
 	for( p_env->index = 0 ; p_env->index < p_env->p_para->process_count ; p_env->index++ )
 	{
@@ -1417,7 +1425,7 @@ int tcpdaemon_IOMP( struct TcpdaemonServerEnvirment *p_env )
 		if( nret == -1 )
 		{
 			ErrorLog( __FILE__ , __LINE__ , "pipe failed , ERRNO[%d]" , ERRNO );
-			CleanDaemonEnv_LF( p_env );
+			CleanDaemonEnv_IOMP( p_env );
 			return -11;
 		}
 		
@@ -1479,7 +1487,7 @@ int tcpdaemon_IOMP( struct TcpdaemonServerEnvirment *p_env )
 				if( nret )
 				{
 					ErrorLog( __FILE__ , __LINE__ , "pipe failed , ERRNO[%d]" , ERRNO );
-					CleanDaemonEnv_LF( p_env );
+					CleanDaemonEnv_IOMP( p_env );
 					return -11;
 				}
 				
@@ -1522,7 +1530,7 @@ int tcpdaemon_IOMP( struct TcpdaemonServerEnvirment *p_env )
 	sigaction( SIGTERM , & oldact , NULL );
 	
 	/* 销毁进程池 */
-	InfoLog( __FILE__ , __LINE__ , "destroy tcpdaemon_LF_worker poll starting" );
+	InfoLog( __FILE__ , __LINE__ , "destroy tcpdaemon_IOMP_worker poll starting" );
 	
 	for( p_env->index = 0 ; p_env->index < p_env->p_para->process_count ; p_env->index++ )
 	{
@@ -1535,7 +1543,7 @@ int tcpdaemon_IOMP( struct TcpdaemonServerEnvirment *p_env )
 		CLOSE( p_env->alive_pipes[p_env->index].fd[1] );
 	}
 	
-	InfoLog( __FILE__ , __LINE__ , "destroy tcpdaemon_LF_worker poll ok" );
+	InfoLog( __FILE__ , __LINE__ , "destroy tcpdaemon_IOMP_worker poll ok" );
 	
 	/* 清理守护环境 */
 	CleanDaemonEnv_IOMP( p_env );
