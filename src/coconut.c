@@ -9,9 +9,14 @@
 #define __USE_GNU
 #include <sched.h>
 
+#include "list.h"
 #include "LOGC.h"
 #include "fasterhttp.h"
 #include "tcpdaemon.h"
+
+/*
+ * 以下为 全局流水号发生器
+ */
 
 /* 对外提供获取序列号URI */
 #define URI_FETCH		"/fetch"
@@ -20,6 +25,19 @@
 
 /* 六十四进位制字符集 */
 static char sg_64_scale_system_charset[] = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_" ;
+
+/*
+ * 以下为 全局额度管理器
+ */
+
+/* 申请额度 */
+#define URI_APPLY__AMT		"/apply?amt="
+/* 撤消流水 */
+#define URI_CANCEL__JNLSNO	"/cancel?jnlsno="
+
+/*
+ * 以下为 公共定义
+ */
 
 /* 通讯基础信息结构 */
 struct NetAddress
@@ -47,21 +65,67 @@ struct ShareMemory
 	int			size ; /* 共享内存大小 */
 } ;
 
+/* 额度分配流水明细块 */
+
+#define APPMODE_GLOBAL_SERIAL_SERVICE	1
+#define APPMODE_GLOBAL_LIMITAMT_SERVICE	2
+
+#define JNLSDETAILCOUNT_IN_BLOCK	1000
+
 /* 服务端环境结构 */
 struct CoconutServerEnvironment
 {
-	uint64_t			reserve ;
-	uint64_t			server_no ;
-	int				listen_port ;
-	int				processor_count ;
-	int				log_level ;
+	int				listen_port ; /* 侦听端口 */
+	int				processor_count ; /* 并发数量 */
+	int				log_level ; /* 日志等级 */
 	int				cpu_affinity ;
+	struct ShareMemory		data_space_shm ; /* 共享内存系统参数 */
+	int				app_mode ; /* 应用模式 */
 	
-	struct ShareMemory		serial_space_shm ;
-	uint64_t			*p_serial_no ;
-	
-	char				sequence_buffer[ 16 + 1 ] ;
-	char				explain_buffer[ 128 + 1 ] ;
+	union
+	{
+		struct GlobalSeiralService
+		{
+			/* 以下为 全局流水号发生器 */
+			uint64_t			reserve ; /* 保留 */
+			uint64_t			server_no ; /* 服务器编号 */
+			char				sequence_buffer[ 16 + 1 ] ; /* 序列号输出缓冲区 */
+			char				explain_buffer[ 128 + 1 ] ; /* 序列号解释输出缓冲区 */
+			int				explain_buffer_len ; /* 序列号解释输出缓冲区有效长度 */
+			struct SerialShareMemory
+			{
+				uint64_t		serial_no ; /* 序号 */
+			} *p_serial_shm ; /* 共享内存指针 */
+		} global_serial_service ;
+		
+		struct GlobalLimitAmtService
+		{
+			/* 以下为 全局额度管理器 */
+			double				limit_amt ; /* 额度配置值 */
+			char				output_buffer[ 128 + 1 ] ; /* 输出缓冲区 */
+			int				output_buffer_len ; /* 输出缓冲区有效长度 */
+			char				*export_jnls_amt_pathfilename ; /* 最后输出申请额度流水明细文件名 */
+			
+			struct JnlsnoShareMemory
+			{
+				uint64_t		jnls_no ; /* 明细流水号 */
+				uint64_t		limit_amt ; /* 当前额度 */
+			} *p_jnlsno_shm ; /* 共享内存指针 */
+			
+			struct JnlsDetailsBlock
+			{
+				struct JnlsDetails
+				{
+					uint64_t	jnls_no ; /* 明细流水号 */
+					uint64_t	amt ; /* 申请额度 */
+					unsigned char	valid ; /* 有效性 */
+				} jnsl_details[ JNLSDETAILCOUNT_IN_BLOCK ] ;
+				int			jnls_detail_count ; /* 块内有效明细数量 */
+				
+				struct list_head	prealloc_node ; /* 块链表节点 */
+			} jnls_details_blocks , *p_current_jnls_details_blocks ; /* 申请额度流水明细块 */
+		} global_limitamt_service ;
+	} app_data ;
 } ;
 
 /* 从NetAddress中设置、得到IP、PORT宏 */
@@ -109,13 +173,17 @@ int BindCpuAffinity( int processor_no )
 }
 
 /* 初始化序列号前半段 */
-static void InitSequence( struct CoconutServerEnvironment *p_env )
+static int InitSequence( struct CoconutServerEnvironment *p_env )
 {
-	uint64_t	index_region ;
-	uint64_t	reserve_region_length = 1 ;
-	uint64_t	server_no_region_length = 2 ;
-	uint64_t	secondstamp_region_length = 6 ;
-	uint64_t	serial_no_region_length = 5 ;
+	struct GlobalSeiralService	*p_global_serial_service = & (p_env->app_data.global_serial_service) ;
+	uint64_t			index_region ;
+	uint64_t			reserve_region_length = 1 ;
+	uint64_t			server_no_region_length = 2 ;
+	uint64_t			secondstamp_region_length = 6 ;
+	uint64_t			serial_no_region_length = 5 ;
+	
+	/* 初始化序号 */
+	p_global_serial_service->p_serial_shm->serial_no = 1 ;
 	
 	/*
 	第一区 分区目录 2个六十四进制字符 共12个二进制位
@@ -132,63 +200,63 @@ static void InitSequence( struct CoconutServerEnvironment *p_env )
 	
 	/* 分区目录 */
 	index_region = (reserve_region_length<<9) + (server_no_region_length<<6) + (secondstamp_region_length<<3) + (serial_no_region_length) ;
-	p_env->sequence_buffer[0] = sg_64_scale_system_charset[(index_region>>6)&0x3F] ;
-	p_env->sequence_buffer[1] = sg_64_scale_system_charset[index_region&0x3F] ;
+	p_global_serial_service->sequence_buffer[0] = sg_64_scale_system_charset[(index_region>>6)&0x3F] ;
+	p_global_serial_service->sequence_buffer[1] = sg_64_scale_system_charset[index_region&0x3F] ;
 	
 	/* 保留区 */
-	p_env->sequence_buffer[2] = sg_64_scale_system_charset[p_env->reserve&0x3F] ;
+	p_global_serial_service->sequence_buffer[2] = sg_64_scale_system_charset[p_global_serial_service->reserve&0x3F] ;
 	
 	/* 服务器编号区 */
-	p_env->sequence_buffer[3] = sg_64_scale_system_charset[(p_env->server_no>>6)&0x3F] ;
-	p_env->sequence_buffer[4] = sg_64_scale_system_charset[p_env->server_no&0x3F] ;
+	p_global_serial_service->sequence_buffer[3] = sg_64_scale_system_charset[(p_global_serial_service->server_no>>6)&0x3F] ;
+	p_global_serial_service->sequence_buffer[4] = sg_64_scale_system_charset[p_global_serial_service->server_no&0x3F] ;
 	
-	return;
+	return 0;
 }
 		
 /* 获取序列号 */
-static void FetchSequence( struct CoconutServerEnvironment *p_env )
+static int FetchSequence( struct CoconutServerEnvironment *p_env )
 {
-	uint64_t	secondstamp ;
-	uint64_t	ret_serial_no ;
-	// static uint64_t	ret_serial_no = 0 ;
+	struct GlobalSeiralService	*p_global_serial_service = & (p_env->app_data.global_serial_service) ;
+	uint64_t			secondstamp ;
+	uint64_t			ret_serial_no ;
 	
 	/* 秒戳区 */
 	secondstamp = time( NULL );
-	p_env->sequence_buffer[5] = sg_64_scale_system_charset[(secondstamp>>30)&0x3F] ;
-	p_env->sequence_buffer[6] = sg_64_scale_system_charset[(secondstamp>>24)&0x3F] ;
-	p_env->sequence_buffer[7] = sg_64_scale_system_charset[(secondstamp>>18)&0x3F] ;
-	p_env->sequence_buffer[8] = sg_64_scale_system_charset[(secondstamp>>12)&0x3F] ;
-	p_env->sequence_buffer[9] = sg_64_scale_system_charset[(secondstamp>>6)&0x3F] ;
-	p_env->sequence_buffer[10] = sg_64_scale_system_charset[secondstamp&0x3F] ;
+	p_global_serial_service->sequence_buffer[5] = sg_64_scale_system_charset[(secondstamp>>30)&0x3F] ;
+	p_global_serial_service->sequence_buffer[6] = sg_64_scale_system_charset[(secondstamp>>24)&0x3F] ;
+	p_global_serial_service->sequence_buffer[7] = sg_64_scale_system_charset[(secondstamp>>18)&0x3F] ;
+	p_global_serial_service->sequence_buffer[8] = sg_64_scale_system_charset[(secondstamp>>12)&0x3F] ;
+	p_global_serial_service->sequence_buffer[9] = sg_64_scale_system_charset[(secondstamp>>6)&0x3F] ;
+	p_global_serial_service->sequence_buffer[10] = sg_64_scale_system_charset[secondstamp&0x3F] ;
 	
 	/* 序号区 */
-	ret_serial_no = __sync_fetch_and_add( p_env->p_serial_no , 1 ) ; /* 序号自增一 */
-	// ret_serial_no++;
-	p_env->sequence_buffer[11] = sg_64_scale_system_charset[(ret_serial_no>>24)&0x3F] ;
-	p_env->sequence_buffer[12] = sg_64_scale_system_charset[(ret_serial_no>>18)&0x3F] ;
-	p_env->sequence_buffer[13] = sg_64_scale_system_charset[(ret_serial_no>>12)&0x3F] ;
-	p_env->sequence_buffer[14] = sg_64_scale_system_charset[(ret_serial_no>>6)&0x3F] ;
-	p_env->sequence_buffer[15] = sg_64_scale_system_charset[ret_serial_no&0x3F] ;
+	ret_serial_no = __sync_fetch_and_add( & (p_global_serial_service->p_serial_shm->serial_no) , 1 ) ; /* 序号自增一 */
+	p_global_serial_service->sequence_buffer[11] = sg_64_scale_system_charset[(ret_serial_no>>24)&0x3F] ;
+	p_global_serial_service->sequence_buffer[12] = sg_64_scale_system_charset[(ret_serial_no>>18)&0x3F] ;
+	p_global_serial_service->sequence_buffer[13] = sg_64_scale_system_charset[(ret_serial_no>>12)&0x3F] ;
+	p_global_serial_service->sequence_buffer[14] = sg_64_scale_system_charset[(ret_serial_no>>6)&0x3F] ;
+	p_global_serial_service->sequence_buffer[15] = sg_64_scale_system_charset[ret_serial_no&0x3F] ;
 	
-	return;
+	return 0;
 }
 
-/* 获取序列号 */
+/* 解释序列号 */
 static int ExplainSequence( struct CoconutServerEnvironment *p_env , char *sequence )
 {
-	char		*pos = NULL ;
-	int		i ;
-	uint64_t	index_region ;
-	uint64_t	reserve_region_length ;
-	uint64_t	server_no_region_length ;
-	uint64_t	secondstamp_region_length ;
-	uint64_t	serial_no_region_length ;
+	struct GlobalSeiralService	*p_global_serial_service = & (p_env->app_data.global_serial_service) ;
+	char				*pos = NULL ;
+	int				i ;
+	uint64_t			index_region ;
+	uint64_t			reserve_region_length ;
+	uint64_t			server_no_region_length ;
+	uint64_t			secondstamp_region_length ;
+	uint64_t			serial_no_region_length ;
 	
-	uint64_t	reserve ;
-	uint64_t	server_no ;
-	time_t		secondstamp ;
-	struct tm	stime ;
-	uint64_t	serial_no ;
+	uint64_t			reserve ;
+	uint64_t			server_no ;
+	time_t				secondstamp ;
+	struct tm			stime ;
+	uint64_t			serial_no ;
 	
 	index_region = 0 ;
 	for( i = 0 ; i < 2 ; i++ )
@@ -285,12 +353,129 @@ static int ExplainSequence( struct CoconutServerEnvironment *p_env , char *seque
 		sequence++;
 	}
 	
-	memset( p_env->explain_buffer , 0x00 , sizeof(p_env->explain_buffer) );
+	memset( p_global_serial_service->explain_buffer , 0x00 , sizeof(p_global_serial_service->explain_buffer) );
 	localtime_r( & secondstamp , & stime );
-	snprintf( p_env->explain_buffer , sizeof(p_env->explain_buffer)-1 , "reserve: %"PRIu64"  server_no: %"PRIu64"  secondstamp: %ld (%04d-%02d-%02d %02d:%02d:%02d)  serial_no: %"PRIu64"\n"
+	p_global_serial_service->explain_buffer_len = snprintf( p_global_serial_service->explain_buffer , sizeof(p_global_serial_service->explain_buffer)-1
+		, "reserve: %"PRIu64"  server_no: %"PRIu64"  secondstamp: %ld (%04d-%02d-%02d %02d:%02d:%02d)  serial_no: %"PRIu64"\n"
 		, reserve , server_no , (long)secondstamp
 		, stime.tm_year+1900 , stime.tm_mon+1 , stime.tm_mday , stime.tm_hour , stime.tm_min , stime.tm_sec
-		, serial_no );
+		, serial_no ) ;
+	
+	return HTTP_OK;
+}
+
+/* 初始化额度 */
+static int InitLimitAmt( struct CoconutServerEnvironment *p_env )
+{
+	struct GlobalLimitAmtService	*p_global_limitamt_service = & (p_env->app_data.global_limitamt_service) ;
+	struct JnlsDetailsBlock		*p_jnls_details_block = NULL ;
+	FILE				*fp = NULL ;
+	
+	p_global_limitamt_service->p_jnlsno_shm->jnls_no = 1 ;
+	p_global_limitamt_service->p_jnlsno_shm->limit_amt = p_global_limitamt_service->limit_amt ;
+	
+	INIT_LIST_HEAD( & (p_global_limitamt_service->jnls_details_blocks.prealloc_node) );
+	
+	p_jnls_details_block = (struct JnlsDetailsBlock *)malloc( sizeof(struct JnlsDetailsBlock) ) ;
+	if( p_jnls_details_block == NULL )
+	{
+		printf( "malloc failed , errno[%d]\n" , errno );
+		return -1;
+	}
+	memset( p_jnls_details_block , 0x00 , sizeof(struct JnlsDetailsBlock) );
+	list_add_tail( & (p_jnls_details_block->prealloc_node) , & (p_global_limitamt_service->jnls_details_blocks.prealloc_node) );
+	
+	p_global_limitamt_service->p_current_jnls_details_blocks = p_jnls_details_block ;
+	
+	/* 测试输出文件 */
+	fp = fopen( p_global_limitamt_service->export_jnls_amt_pathfilename , "w" ) ;
+	if( fp == NULL )
+	{
+		printf( "can't write file[%s]\n" , p_global_limitamt_service->export_jnls_amt_pathfilename );
+		return -1;
+	}
+	
+	fclose( fp );
+	
+	return 0;
+}
+
+/* 申请额度 */
+static int ApplyLimitAmt( struct CoconutServerEnvironment *p_env , uint64_t amt )
+{
+	struct GlobalLimitAmtService	*p_global_limitamt_service = & (p_env->app_data.global_limitamt_service) ;
+	static char			in_apply_flag = 1 ;
+	uint64_t			old_limit_amt ;
+	uint64_t			new_limit_amt ;
+	uint64_t			ret_limit_amt ;
+	struct JnlsDetailsBlock		*p_jnls_details_block = NULL ;
+	
+	if( in_apply_flag == 1 )
+	{
+		while(1)
+		{
+			old_limit_amt = p_global_limitamt_service->p_jnlsno_shm->limit_amt ;
+			if( old_limit_amt < 0 )
+			{
+				p_global_limitamt_service->output_buffer_len = snprintf( p_global_limitamt_service->output_buffer , sizeof(p_global_limitamt_service->output_buffer)-1 , "0 0\n" ) ;
+				in_apply_flag = 0 ;
+				break;
+			}
+			
+			new_limit_amt = old_limit_amt - amt ;
+			if( new_limit_amt < 0 )
+			{
+				p_global_limitamt_service->output_buffer_len = snprintf( p_global_limitamt_service->output_buffer , sizeof(p_global_limitamt_service->output_buffer)-1 , "0 %llu\n" , old_limit_amt ) ;
+				in_apply_flag = 0 ;
+				break;
+			}
+			
+			ret_limit_amt = __sync_val_compare_and_swap( & (p_global_limitamt_service->p_jnlsno_shm->limit_amt) , old_limit_amt , new_limit_amt ) ;
+			if( ret_limit_amt != old_limit_amt )
+				continue;
+			
+			if( p_global_limitamt_service->p_current_jnls_details_blocks->jnls_detail_count >= JNLSDETAILCOUNT_IN_BLOCK )
+			{
+				p_jnls_details_block = (struct JnlsDetailsBlock *)malloc( sizeof(struct JnlsDetailsBlock) ) ;
+				if( p_jnls_details_block == NULL )
+				{
+					printf( "malloc failed , errno[%d]\n" , errno );
+					return HTTP_INTERNAL_SERVER_ERROR;
+				}
+				memset( p_jnls_details_block , 0x00 , sizeof(struct JnlsDetailsBlock) );
+				list_add_tail( & (p_jnls_details_block->prealloc_node) , & (p_global_limitamt_service->jnls_details_blocks.prealloc_node) );
+				
+				p_global_limitamt_service->p_current_jnls_details_blocks = p_jnls_details_block ;
+			}
+			
+			p_global_limitamt_service->p_current_jnls_details_blocks->jnsl_details[p_global_limitamt_service->p_current_jnls_details_blocks->jnls_detail_count].jnls_no = __sync_fetch_and_add( & (p_global_limitamt_service->p_jnlsno_shm->jnls_no) , 1 ) ;
+			p_global_limitamt_service->p_current_jnls_details_blocks->jnsl_details[p_global_limitamt_service->p_current_jnls_details_blocks->jnls_detail_count].amt = amt ;
+			p_global_limitamt_service->p_current_jnls_details_blocks->jnsl_details[p_global_limitamt_service->p_current_jnls_details_blocks->jnls_detail_count].valid = 1 ;
+		}
+		
+		p_global_limitamt_service->output_buffer_len = snprintf( p_global_limitamt_service->output_buffer , sizeof(p_global_limitamt_service->output_buffer)-1 , "%llu %llu\n" , p_global_limitamt_service->p_current_jnls_details_blocks->jnsl_details[p_global_limitamt_service->p_current_jnls_details_blocks->jnls_detail_count].jnls_no , new_limit_amt ) ;
+	}
+	else
+	{
+		p_global_limitamt_service->output_buffer_len = snprintf( p_global_limitamt_service->output_buffer , sizeof(p_global_limitamt_service->output_buffer)-1 , "0\n" ) ;
+	}
+	
+	return HTTP_OK;
+}
+
+/* 撤销额度 */
+static int CancelApply( struct CoconutServerEnvironment *p_env , uint64_t jnls_no )
+{
+	if( p_env->processor_count != 1 )
+	{
+		p_global_limitamt_service->output_buffer_len = snprintf( p_global_limitamt_service->output_buffer , sizeof(p_global_limitamt_service->output_buffer)-1 , "-1\n" ) ;
+		return HTTP_OK;
+	}
+	
+	
+	
+	
+	
 	
 	return HTTP_OK;
 }
@@ -307,40 +492,98 @@ static int DispatchProcess( struct CoconutServerEnvironment *p_env , struct Acce
 	uri = GetHttpHeaderPtr_URI( p_accepted_session->http , & uri_len ) ;
 	InfoLog( __FILE__ , __LINE__ , "uri[%.*s]" , uri_len , uri );
 	
-	/* 获取序列号 */
-	if( uri_len == sizeof(URI_FETCH)-1 && MEMCMP( uri , == , URI_FETCH , uri_len ) )
+	if( p_env->app_mode == APPMODE_GLOBAL_SERIAL_SERVICE )
 	{
-		FetchSequence( p_env );
+		struct GlobalSeiralService	*p_global_serial_service = & (p_env->app_data.global_serial_service) ;
 		
-		nret = FormatHttpResponseStartLine( HTTP_OK , p_accepted_session->http , 0
-			, "Content-length: %d" HTTP_RETURN_NEWLINE
-			HTTP_RETURN_NEWLINE
-			"%s\n" HTTP_RETURN_NEWLINE
-			, sizeof(p_env->sequence_buffer)
-			, p_env->sequence_buffer ) ;
-		if( nret )
+		/* 获取序列号 */
+		if( uri_len == sizeof(URI_FETCH)-1 && MEMCMP( uri , == , URI_FETCH , uri_len ) )
 		{
-			ErrorLog( __FILE__ , __LINE__ , "FormatHttpResponseStartLine failed[%d]" , nret );
-			return HTTP_INTERNAL_SERVER_ERROR;
+			nret = FetchSequence( p_env ) ;
+			if( nret != HTTP_OK )
+				return nret;
+			
+			nret = FormatHttpResponseStartLine( HTTP_OK , p_accepted_session->http , 0
+				, "Content-length: %d" HTTP_RETURN_NEWLINE
+				HTTP_RETURN_NEWLINE
+				"%s\n" HTTP_RETURN_NEWLINE
+				, sizeof(p_global_serial_service->sequence_buffer)
+				, p_global_serial_service->sequence_buffer ) ;
+			if( nret )
+			{
+				ErrorLog( __FILE__ , __LINE__ , "FormatHttpResponseStartLine failed[%d]" , nret );
+				return HTTP_INTERNAL_SERVER_ERROR;
+			}
+		}
+		/* 获取序列号 */
+		else if( MEMCMP( uri , == , URI_EXPLAIN__SEQUENCE , sizeof(URI_EXPLAIN__SEQUENCE)-1 ) )
+		{
+			nret = ExplainSequence( p_env , uri+sizeof(URI_EXPLAIN__SEQUENCE)-1 ) ;
+			if( nret != HTTP_OK )
+				return nret;
+			
+			nret = FormatHttpResponseStartLine( HTTP_OK , p_accepted_session->http , 0
+				, "Content-length: %d" HTTP_RETURN_NEWLINE
+				HTTP_RETURN_NEWLINE
+				"%s" HTTP_RETURN_NEWLINE
+				, p_global_serial_service->explain_buffer_len
+				, p_global_serial_service->explain_buffer ) ;
+			if( nret )
+			{
+				ErrorLog( __FILE__ , __LINE__ , "FormatHttpResponseStartLine failed[%d]" , nret );
+				return HTTP_INTERNAL_SERVER_ERROR;
+			}
+		}
+		else
+		{
+			return HTTP_NOT_FOUND;
 		}
 	}
-	/* 获取序列号 */
-	else if( MEMCMP( uri , == , URI_EXPLAIN__SEQUENCE , sizeof(URI_EXPLAIN__SEQUENCE)-1 ) )
+	else if( p_env->app_mode == APPMODE_GLOBAL_LIMITAMT_SERVICE )
 	{
-		nret = ExplainSequence( p_env , uri+sizeof(URI_EXPLAIN__SEQUENCE)-1 ) ;
-		if( nret != HTTP_OK )
-			return nret;
+		struct GlobalLimitAmtService	*p_global_limitamt_service = & (p_env->app_data.global_limitamt_service) ;
 		
-		nret = FormatHttpResponseStartLine( HTTP_OK , p_accepted_session->http , 0
-			, "Content-length: %d" HTTP_RETURN_NEWLINE
-			HTTP_RETURN_NEWLINE
-			"%s" HTTP_RETURN_NEWLINE
-			, strlen(p_env->explain_buffer)
-			, p_env->explain_buffer ) ;
-		if( nret )
+		/* 申请额度 */
+		if( MEMCMP( uri , == , URI_APPLY__AMT , sizeof(URI_APPLY__AMT)-1 ) )
 		{
-			ErrorLog( __FILE__ , __LINE__ , "FormatHttpResponseStartLine failed[%d]" , nret );
-			return HTTP_INTERNAL_SERVER_ERROR;
+			nret = ApplyLimitAmt( p_env , (uint64_t)atoll(uri+sizeof(URI_APPLY__AMT)-1) ) ;
+			if( nret != HTTP_OK )
+				return nret;
+			
+			nret = FormatHttpResponseStartLine( HTTP_OK , p_accepted_session->http , 0
+				, "Content-length: %d" HTTP_RETURN_NEWLINE
+				HTTP_RETURN_NEWLINE
+				"%s\n" HTTP_RETURN_NEWLINE
+				, p_global_limitamt_service->output_buffer_len
+				, p_global_limitamt_service->output_buffer ) ;
+			if( nret )
+			{
+				ErrorLog( __FILE__ , __LINE__ , "FormatHttpResponseStartLine failed[%d]" , nret );
+				return HTTP_INTERNAL_SERVER_ERROR;
+			}
+		}
+		/* 撤销额度 */
+		else if( MEMCMP( uri , == , URI_CANCEL__JNLSNO , sizeof(URI_CANCEL__JNLSNO)-1 ) )
+		{
+			nret = CancelApply( p_env , (uint64_t)atoll(uri+sizeof(URI_CANCEL__JNLSNO)-1) ) ;
+			if( nret != HTTP_OK )
+				return nret;
+			
+			nret = FormatHttpResponseStartLine( HTTP_OK , p_accepted_session->http , 0
+				, "Content-length: %d" HTTP_RETURN_NEWLINE
+				HTTP_RETURN_NEWLINE
+				"%s" HTTP_RETURN_NEWLINE
+				, p_global_limitamt_service->output_buffer_len
+				, p_global_limitamt_service->output_buffer ) ;
+			if( nret )
+			{
+				ErrorLog( __FILE__ , __LINE__ , "FormatHttpResponseStartLine failed[%d]" , nret );
+				return HTTP_INTERNAL_SERVER_ERROR;
+			}
+		}
+		else
+		{
+			return HTTP_NOT_FOUND;
 		}
 	}
 	else
@@ -492,13 +735,19 @@ static void usage()
 {
 	printf( "coconut v0.0.6.1\n" );
 	printf( "Copyright by calvin 2017\n" );
-	printf( "USAGE : coconut -r (reserve) -s (server_no) -p (listen_port) [ -c (processor_count) ] [ --log-level (DEBUG|INFO|WARN|ERROR|FATAL) ] [ --cpu-affinity ]\n" );
+	printf( "USAGE : coconut -M ( SERIAL | LIMIT-AMT ) -p (listen_port) [ -c (processor_count) ] [ --log-level (DEBUG|INFO|WARN|ERROR|FATAL) ] [ --cpu-affinity ]\n" );
+	printf( "                global serial service :\n" );
+	printf( "                    --reserve (reserve) --server_no (server_no)\n" );
+	printf( "                global limit-amt service :\n" );
+	printf( "                    --limit-amt (amt) --export-pathfilename (pathfilename)\n" );
 	return;
 }
 
 int main( int argc , char *argv[] )
 {
 	struct CoconutServerEnvironment	env , *p_env = & env ;
+	struct GlobalSeiralService	*p_global_serial_service = & (p_env->app_data.global_serial_service) ;
+	struct GlobalLimitAmtService	*p_global_limitamt_service = & (p_env->app_data.global_limitamt_service) ;
 	int				i ;
 	struct TcpdaemonEntryParameter	para ;
 	
@@ -511,13 +760,19 @@ int main( int argc , char *argv[] )
 		/* 解析命令行参数 */
 		for( i = 1 ; i < argc ; i++ )
 		{
-			if( strcmp( argv[i] , "-r" ) == 0 && i + 1 < argc )
+			if( strcmp( argv[i] , "-M" ) == 0 && i + 1 < argc )
 			{
-				p_env->reserve = (uint64_t)atoi(argv[++i]) ;
-			}
-			else if( strcmp( argv[i] , "-s" ) == 0 && i + 1 < argc )
-			{
-				p_env->server_no = (uint64_t)atoi(argv[++i]) ;
+				++i;
+				if( STRCMP( argv[i] , == , "SERIAL" ) )
+					p_env->app_mode = APPMODE_GLOBAL_SERIAL_SERVICE ;
+				else if( STRCMP( argv[i] , == , "LIMIT-AMT" ) )
+					p_env->app_mode = APPMODE_GLOBAL_LIMITAMT_SERVICE ;
+				else
+				{
+					printf( "Invalid command parameter value '%s' for -M\n" , argv[i] );
+					usage();
+					exit(7);
+				}
 			}
 			else if( strcmp( argv[i] , "-p" ) == 0 && i + 1 < argc )
 			{
@@ -540,6 +795,22 @@ int main( int argc , char *argv[] )
 			else if( strcmp( argv[i] , "--cpu-affinity" ) == 0 )
 			{
 				p_env->cpu_affinity = 1 ;
+			}
+			else if( strcmp( argv[i] , "--reserve" ) == 0 && i + 1 < argc )
+			{
+				p_global_serial_service->reserve = (uint64_t)atoi(argv[++i]) ;
+			}
+			else if( strcmp( argv[i] , "--server_no" ) == 0 && i + 1 < argc )
+			{
+				p_global_serial_service->server_no = (uint64_t)atoi(argv[++i]) ;
+			}
+			else if( strcmp( argv[i] , "--limit-amt" ) == 0 && i + 1 < argc )
+			{
+				p_global_limitamt_service->limit_amt = (uint64_t)atoll(argv[++i]) ;
+			}
+			else if( strcmp( argv[i] , "--export-jnls-amt-pathfilename" ) == 0 && i + 1 < argc )
+			{
+				p_global_limitamt_service->export_jnls_amt_pathfilename = argv[++i] ;
 			}
 		}
 		
@@ -567,27 +838,46 @@ int main( int argc , char *argv[] )
 		}
 		
 		/* 创建序列共享内存 */
-		p_env->serial_space_shm.shmkey = 0 ;
-		p_env->serial_space_shm.size = sizeof(uint64_t) ;
-		p_env->serial_space_shm.shmid = shmget( p_env->serial_space_shm.shmkey , p_env->serial_space_shm.size , IPC_CREAT|0644 ) ;
-		if( p_env->serial_space_shm.shmid == -1 )
+		p_env->data_space_shm.shmkey = 0 ;
+		if( p_env->app_mode == APPMODE_GLOBAL_SERIAL_SERVICE )
+			p_env->data_space_shm.size = sizeof(struct SerialShareMemory) ;
+		else if( p_env->app_mode == APPMODE_GLOBAL_LIMITAMT_SERVICE )
+			p_env->data_space_shm.size = sizeof(struct JnlsnoShareMemory) ;
+		p_env->data_space_shm.shmid = shmget( p_env->data_space_shm.shmkey , p_env->data_space_shm.size , IPC_CREAT|0644 ) ;
+		if( p_env->data_space_shm.shmid == -1 )
 		{
 			printf( "shmget failed , errno[%d]\n" , errno );
 			return 1;
 		}
 		
 		/* 连接序列共享内存 */
-		p_env->serial_space_shm.base = shmat( p_env->serial_space_shm.shmid , NULL , 0 ) ;
-		if( p_env->serial_space_shm.base == NULL )
+		p_env->data_space_shm.base = shmat( p_env->data_space_shm.shmid , NULL , 0 ) ;
+		if( p_env->data_space_shm.base == NULL )
 		{
 			printf( "shmat failed , errno[%d]\n" , errno );
 			return 1;
 		}
-		p_env->p_serial_no = (uint64_t*)(p_env->serial_space_shm.base) ;
-		*(p_env->p_serial_no) = 0 ;
+		memset( p_env->data_space_shm.base , 0x00 , p_env->data_space_shm.size );
+		if( p_env->app_mode == APPMODE_GLOBAL_SERIAL_SERVICE )
+			p_global_serial_service->p_serial_shm = (struct SerialShareMemory *)(p_env->data_space_shm.base) ;
+		else if( p_env->app_mode == APPMODE_GLOBAL_LIMITAMT_SERVICE )
+			p_global_limitamt_service->p_jnlsno_shm = (struct JnlsnoShareMemory *)(p_env->data_space_shm.base) ;
 		
-		/* 初始化序列号前半段 */
-		InitSequence( & env );
+		if( p_env->app_mode == APPMODE_GLOBAL_SERIAL_SERVICE )
+		{
+			/* 初始化序列号前半段 */
+			nret = InitSequence( & env ) ;
+		}
+		else if( p_env->app_mode == APPMODE_GLOBAL_LIMITAMT_SERVICE )
+		{
+			/* 初始化额度 */
+			nret = InitLimitAmt( & env ) ;
+		}
+		if( nret )
+		{
+			printf( "init failed[%d] , errno[%d]\n" , nret , errno );
+			return 1;
+		}
 		
 		/* 初始化tcpdaemon参数结构 */
 		memset( & para , 0x00 , sizeof(struct TcpdaemonEntryParameter) );
@@ -611,10 +901,10 @@ int main( int argc , char *argv[] )
 		}
 		
 		/* 断开共享内存 */
-		shmdt( p_env->serial_space_shm.base );
+		shmdt( p_env->data_space_shm.base );
 		
 		/* 删除共享内存 */
-		shmctl( p_env->serial_space_shm.shmid , IPC_RMID , NULL );
+		shmctl( p_env->data_space_shm.shmid , IPC_RMID , NULL );
 	}
 	else
 	{
