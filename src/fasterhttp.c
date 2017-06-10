@@ -3111,7 +3111,7 @@ int StrcpyfHttpBuffer( struct HttpBuffer *b , char *format , ... )
 		va_start( valist , format );
 		len = VSNPRINTF( b->base , b->buf_size-1 , format , valist ) ;
 		va_end( valist );
-		if( len == -1 || len == b->buf_size-1 )
+		if( len == -1 || len >= b->buf_size-1 )
 		{
 			nret = ReallocHttpBuffer( b , -1 ) ;
 			if( nret )
@@ -3139,7 +3139,7 @@ int StrcpyvHttpBuffer( struct HttpBuffer *b , char *format , va_list valist )
 	{
 		va_copy( valist , valist_copy );
 		len = VSNPRINTF( b->base , b->buf_size-1 , format , valist ) ;
-		if( len == -1 || len == b->buf_size-1 )
+		if( len == -1 || len >= b->buf_size-1 )
 		{
 			nret = ReallocHttpBuffer( b , -1 ) ;
 			if( nret )
@@ -3207,6 +3207,8 @@ int StrcatfHttpBuffer( struct HttpBuffer *b , char *format , ... )
 	return 0;
 }
 
+#include "LOGC.h"
+
 int StrcatvHttpBuffer( struct HttpBuffer *b , char *format , va_list valist )
 {
 	va_list		valist_copy ;
@@ -3219,7 +3221,7 @@ int StrcatvHttpBuffer( struct HttpBuffer *b , char *format , va_list valist )
 	{
 		va_copy( valist , valist_copy );
 		len = VSNPRINTF( b->fill_ptr , b->buf_size-1 - (b->fill_ptr-b->base) , format , valist ) ;
-		if( len == -1 || len == b->buf_size-1 - (b->fill_ptr-b->base) )
+		if( len == -1 || len >= b->buf_size-1 - (b->fill_ptr-b->base) )
 		{
 			nret = ReallocHttpBuffer( b , -1 ) ;
 			if( nret )
