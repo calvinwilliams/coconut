@@ -35,6 +35,10 @@ curl http://127.0.0.1:9527/explain?sequence=aR2001pe_LT00004
 ps -ef | grep coconut | awk '{if($3==1)print $2}' | xargs kill
 */
 
+/* for brench
+rmlog ; ab -c 100 -n 100000 http://127.0.0.1:9527/fetch
+*/
+
 /*
  * 以下为 全局额度管理器
  */
@@ -53,7 +57,7 @@ ps -ef | grep coconut | awk '{if($3==1)print $2}' | xargs kill
 #define URI_EMPTY		"/empty"
 
 /* for testing
-rmlog ; coconut -M LIMITAMT -p 9527 -c 1 --loglevel-debug --limit-amt 10000 --export-jnls-amt-pathfilename $HOME/jnls_amt.txt
+rmlog ; coconut -M LIMITAMT -p 9527 -c 1 --loglevel-debug --limit-amt 1000000 --export-jnls-amt-pathfilename $HOME/coconut_LIMITAMT.txt
 
 curl http://127.0.0.1:9527/query
 curl http://127.0.0.1:9527/apply?amt=1
@@ -76,6 +80,10 @@ curl http://127.0.0.1:9527/apply?amt=50
 curl http://127.0.0.1:9527/query
 
 ps -ef | grep coconut | awk '{if($3==1)print $2}' | xargs kill
+*/
+
+/* for brench
+rmlog ; coconut -M LIMITAMT -p 9527 -c 1 --loglevel-warn --limit-amt 10000000 --export-jnls-amt-pathfilename $HOME/coconut_JNLSNO_AMT.txt
 */
 
 /*
@@ -113,24 +121,29 @@ struct ShareMemory
 #define APPMODE_GLOBAL_SEQUENCE_SERVICE	1
 #define APPMODE_GLOBAL_LIMITAMT_SERVICE	2
 
-#define JNLSDETAILSCOUNT_IN_BLOCK	5
+#define JNLSDETAILSCOUNT_IN_BLOCK	1000
 
 /* 服务端环境结构 */
 struct CoconutServerEnvironment
 {
-	int				listen_port ; /* 侦听端口 */
-	int				processor_count ; /* 并发数量 */
-	int				log_level ; /* 日志等级 */
-	int				cpu_affinity ;
-	struct ShareMemory		data_space_shm ; /* 共享内存系统参数 */
-	int				app_mode ; /* 应用模式 */
+	int			listen_port ; /* 侦听端口 */
+	int			processor_count ; /* 并发数量 */
+	int			log_level ; /* 日志等级 */
+	char			*p_reserve ; /* 保留值 */
+	char			*p_server_no ; /* 服务器编号 */
+	char			*p_limit_amt ; /* 额度配置值 */
+	char			*p_export_jnls_amt_pathfilename ; /* 最后输出申请额度流水明细文件名 */
+	int			cpu_affinity ;
+	
+	struct ShareMemory	data_space_shm ; /* 共享内存系统参数 */
+	int			app_mode ; /* 应用模式 */
 	
 	union
 	{
 		struct GlobalSequenceService
 		{
 			/* 以下为 全局流水号发生器 */
-			uint64_t			reserve ; /* 保留 */
+			uint64_t			reserve ; /* 保留值 */
 			uint64_t			server_no ; /* 服务器编号 */
 			char				sequence_buffer[ 16 + 1 ] ; /* 序列号输出缓冲区 */
 			char				output_buffer[ 128 + 1 ] ; /* 输出缓冲区 */
@@ -145,10 +158,10 @@ struct CoconutServerEnvironment
 		{
 			/* 以下为 全局额度管理器 */
 			int64_t				limit_amt ; /* 额度配置值 */
-			char				in_apply_flag ;
+			char				*export_jnls_amt_pathfilename ; /* 最后输出申请额度流水明细文件名 */
+			char				in_apply_flag ; /* 可申请额度标志 */
 			char				output_buffer[ 128 + 1 ] ; /* 输出缓冲区 */
 			int				output_buffer_len ; /* 输出缓冲区有效长度 */
-			char				*export_jnls_amt_pathfilename ; /* 最后输出申请额度流水明细文件名 */
 			
 			struct JnlsnoShareMemory
 			{
@@ -640,6 +653,12 @@ static int CancelApply( struct CoconutServerEnvironment *p_env , uint64_t jnls_n
 				
 				if( jnls_no == p_global_limitamt_service->p_current_jnls_details_blocks->jnls_details[middle].jnls_no )
 				{
+					if( p_global_limitamt_service->p_current_jnls_details_blocks->jnls_details[middle].valid == 0 )
+					{
+						p_global_limitamt_service->output_buffer_len = snprintf( p_global_limitamt_service->output_buffer , sizeof(p_global_limitamt_service->output_buffer)-1 , "0\n" ) ;
+						return HTTP_OK;
+					}
+					
 					while(1)
 					{
 						old_limit_amt = p_global_limitamt_service->p_jnlsno_shm->limit_amt ;
@@ -761,7 +780,7 @@ static int EmptyCurrentLimitAmt( struct CoconutServerEnvironment *p_env )
 	p_global_limitamt_service->in_apply_flag = 0 ;
 	ExportJnlsAmtDetails( p_env );
 	
-	p_global_limitamt_service->output_buffer_len = snprintf( p_global_limitamt_service->output_buffer , sizeof(p_global_limitamt_service->output_buffer)-1 , "%"PRId64"\n" , p_global_limitamt_service->p_jnlsno_shm->limit_amt ) ;
+	p_global_limitamt_service->output_buffer_len = snprintf( p_global_limitamt_service->output_buffer , sizeof(p_global_limitamt_service->output_buffer)-1 , "%"PRId64"\n" , new_limit_amt ) ;
 	return HTTP_OK;
 }
 
@@ -1096,11 +1115,11 @@ static void usage()
 {
 	printf( "coconut v0.0.7.0\n" );
 	printf( "Copyright by calvin 2017\n" );
-	printf( "USAGE : coconut -M ( SERIAL | LIMIT-AMT ) -p (listen_port) [ -c (processor_count) ] [ --loglevel-(debug|info|warn|error|fatal) ] [ --cpu-affinity ]\n" );
+	printf( "USAGE : coconut -M ( SEQUENCE | LIMITAMT ) -p (listen_port) [ -c (processor_count) ] [ --loglevel-(debug|info|warn|error|fatal) ] [ --cpu-affinity ]\n" );
 	printf( "                global serial service :\n" );
-	printf( "                    --reserve (reserve) --server_no (server_no)\n" );
+	printf( "                    --reserve (reserve) --server-no (server_no)\n" );
 	printf( "                global limit-amt service :\n" );
-	printf( "                    --limit-amt (amt) --export-pathfilename (pathfilename)\n" );
+	printf( "                    --limit-amt (amt) --export-jnls-amt-pathfilename (pathfilename)\n" );
 	return;
 }
 
@@ -1125,7 +1144,7 @@ int main( int argc , char *argv[] )
 			if( strcmp( argv[i] , "-M" ) == 0 && i + 1 < argc )
 			{
 				++i;
-				if( STRCMP( argv[i] , == , "SERIAL" ) )
+				if( STRCMP( argv[i] , == , "SEQUENCE" ) )
 				{
 					p_env->app_mode = APPMODE_GLOBAL_SEQUENCE_SERVICE ;
 				}
@@ -1174,19 +1193,19 @@ int main( int argc , char *argv[] )
 			}
 			else if( strcmp( argv[i] , "--reserve" ) == 0 && i + 1 < argc )
 			{
-				p_global_sequence_service->reserve = (uint64_t)atoi(argv[++i]) ;
+				p_env->p_reserve = argv[++i] ;
 			}
 			else if( strcmp( argv[i] , "--server-no" ) == 0 && i + 1 < argc )
 			{
-				p_global_sequence_service->server_no = (uint64_t)atoi(argv[++i]) ;
+				p_env->p_server_no = argv[++i] ;
 			}
 			else if( strcmp( argv[i] , "--limit-amt" ) == 0 && i + 1 < argc )
 			{
-				p_global_limitamt_service->limit_amt = (uint64_t)atoll(argv[++i]) ;
+				p_env->p_limit_amt = argv[++i] ;
 			}
 			else if( strcmp( argv[i] , "--export-jnls-amt-pathfilename" ) == 0 && i + 1 < argc )
 			{
-				p_global_limitamt_service->export_jnls_amt_pathfilename = argv[++i] ;
+				p_env->p_export_jnls_amt_pathfilename = argv[++i] ;
 			}
 		}
 		
@@ -1212,8 +1231,31 @@ int main( int argc , char *argv[] )
 			usage();
 			exit(7);
 		}
-		if( p_env->app_mode == APPMODE_GLOBAL_LIMITAMT_SERVICE )
+		
+		if( p_env->app_mode == APPMODE_GLOBAL_SEQUENCE_SERVICE )
+		{
+			if( p_env->p_reserve == NULL || p_env->p_server_no == NULL )
+			{
+				printf( "expect parameter '--reserve (reserve)' or '--server-no (server_no)' for -M SERIAL\n" );
+				return -1;
+			}
+			
+			p_global_sequence_service->reserve = (uint64_t)atoi(p_env->p_reserve) ;
+			p_global_sequence_service->server_no = (uint64_t)atoi(p_env->p_server_no) ;
+		}
+		else if( p_env->app_mode == APPMODE_GLOBAL_LIMITAMT_SERVICE )
+		{
+			if( p_env->p_limit_amt == NULL || p_env->p_export_jnls_amt_pathfilename == NULL )
+			{
+				printf( "expect parameter '--limit-amt (limit_amt)' or '--export-jnls-amt-pathfilename (export_jnls_amt_pathfilename)' for -M LIMITAMT\n" );
+				return -1;
+			}
+			
+			p_global_limitamt_service->limit_amt = (uint64_t)atoll(p_env->p_limit_amt) ;
+			p_global_limitamt_service->export_jnls_amt_pathfilename = p_env->p_export_jnls_amt_pathfilename ;
+			
 			p_env->processor_count = 1 ;
+		}
 		
 		/* 创建序列共享内存 */
 		p_env->data_space_shm.shmkey = 0 ;
