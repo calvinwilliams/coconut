@@ -153,7 +153,7 @@ URL : http://(domain|ip):[port]/empty<br>
     $ curl http://127.0.0.1:9527/explain?sequence=aR2011pfizz00001
     reserve: 2  server_no: 1  secondstamp: 1497180387 (2017-06-11 19:26:27)  serial_no: 1
 
-压测 获取序列号
+压测 获取序列号（短连接）
 
     $ ab -c 100 -n 100000 http://127.0.0.1:9527/fetch
     This is ApacheBench, Version 2.3 <$Revision: 1430300 $>
@@ -270,7 +270,7 @@ URL : http://(domain|ip):[port]/empty<br>
     4 4 6
     5 5
 
-压测 申请额度
+压测 申请额度（长连接）
 
     $ curl http://127.0.0.1:9527/increase?amt=1000000
     1000000
