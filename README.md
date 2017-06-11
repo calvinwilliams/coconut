@@ -1,7 +1,6 @@
 coconut - 应用缓存服务器
 ======================
-Copyright by calvin<br>
-Email : calvinwilliams@163.com<br>
+Copyright by calvinwilliams
 
 # 1.概述 #
 
