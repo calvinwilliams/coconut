@@ -352,15 +352,15 @@ URL : http://(domain|ip):[port]/empty<br>
 -M ( SEQUENCE | LIMITAMT ) : 场景模式 *SEQUENCE全局序列号发生器；LIMITAMT 全局额度管理器*<br>
 -p (listen_port) : 侦听端口<br>
 -c (processor_count) : 并发进程数量。全局额度管理器模式目前只支持单并发<br>
---loglevel-(debug|info|warn|error|fatal) : 日志等级，默认warn等级。日志文件输出到$HOME/log/coconut.log
+--loglevel-(debug|info|warn|error|fatal) : 日志等级，默认warn等级。日志文件输出到$HOME/log/coconut.log<br>
 
-全局序列号发生器 场景模式
---reserve (reserve) ： 保留值，可用作业务类型
---server-no (server_no) ： 服务器编号
+全局序列号发生器 场景模式<br>
+--reserve (reserve) ： 保留值，可用作业务类型<br>
+--server-no (server_no) ： 服务器编号<br>
 
-全局额度管理器 场景模式
---limit-amt (amt) : 总额度
---export-jnls-amt-pathfilename (pathfilename) : 申请结束后导出申请流水文件
+全局额度管理器 场景模式<br>
+--limit-amt (amt) : 总额度<br>
+--export-jnls-amt-pathfilename (pathfilename) : 申请结束后导出申请流水文件<br>
 
 # 最后 #
 
