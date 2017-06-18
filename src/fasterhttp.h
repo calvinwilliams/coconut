@@ -119,6 +119,10 @@ char *strcasestr(const char *haystack, const char *needle);
 #define STAT_DIRECTORY(_st_) S_ISDIR(_st_.st_mode)
 #endif
 
+#ifndef va_copy
+#define va_copy(dst, src)   memcpy(&(dst), &(src), sizeof(va_list))
+#endif
+
 #define HTTP_CONTINUE				100 
 #define HTTP_SWITCHING_PROTOCOL			101 
 #define HTTP_OK					200 
@@ -265,12 +269,12 @@ char *strcasestr(const char *haystack, const char *needle);
 
 #define FASTERHTTP_TIMEOUT_DEFAULT			60
 
-#define FASTERHTTP_REQUEST_BUFSIZE_DEFAULT		128
-#define FASTERHTTP_RESPONSE_BUFSIZE_DEFAULT		128
+#define FASTERHTTP_REQUEST_BUFSIZE_DEFAULT		512
+#define FASTERHTTP_RESPONSE_BUFSIZE_DEFAULT		1024
 #define FASTERHTTP_HEADER_ARRAYSIZE_DEFAULT		8
 
-#define FASTERHTTP_REQUEST_BUFSIZE_MAX			1*1024
-#define FASTERHTTP_RESPONSE_BUFSIZE_MAX			10*1024
+#define FASTERHTTP_REQUEST_BUFSIZE_MAX			10*1024
+#define FASTERHTTP_RESPONSE_BUFSIZE_MAX			100*1024
 #define FASTERHTTP_HEADER_ARRAYSIZE_MAX			32
 
 #define FASTERHTTP_PARSESTEP_BEGIN				0
@@ -461,7 +465,6 @@ _WINDLL_FUNC void AppendHttpBuffer( struct HttpEnv *e , struct HttpBuffer *b );
 _WINDLL_FUNC char *GetHttpBufferFillPtr( struct HttpBuffer *b );
 _WINDLL_FUNC void SetHttpBufferFillPtr( struct HttpBuffer *b , int offset );
 _WINDLL_FUNC void OffsetHttpBufferFillPtr( struct HttpBuffer *b , int offset );
-_WINDLL_FUNC int GetHttpBufferLengthFilled( struct HttpBuffer *b );
 _WINDLL_FUNC int GetHttpBufferLengthUnfilled( struct HttpBuffer *b );
 _WINDLL_FUNC void OffsetHttpBufferProcessPtr( struct HttpBuffer *b , int offset );
 _WINDLL_FUNC int GetHttpBufferLengthProcessed( struct HttpBuffer *b );
