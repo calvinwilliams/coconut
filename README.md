@@ -141,7 +141,7 @@ URL : http://(domain|ip):[port]/empty<br>
 
 启动服务
 
-    $ coconut -M SEQUENCE -p 9527 -c 1 --loglevel-warn --reserve 2 --server-no 1
+    $ coconut -M SEQUENCE -l 127.0.0.1 -p 9527 -c 1 --loglevel-warn --reserve 2 --server-no 1
 
 获取序列号
 
@@ -219,7 +219,7 @@ URL : http://(domain|ip):[port]/empty<br>
 
 启动服务
 
-    $ coconut -M LIMITAMT -p 9527 -c 1 --loglevel-warn --limit-amt 1000000 --export-jnls-amt-pathfilename $HOME/coconut_JNLSNO_AMT.txt
+    $ coconut -M LIMITAMT -l 127.0.0.1 -p 9527 -c 1 --loglevel-warn --limit-amt 1000000 --export-jnls-amt-pathfilename $HOME/coconut_JNLSNO_AMT.txt
 
 查询额度
 
@@ -343,7 +343,7 @@ URL : http://(domain|ip):[port]/empty<br>
     $ coconut
     coconut v0.0.7.0
     Copyright by calvin 2017
-    USAGE : coconut -M ( SEQUENCE | LIMITAMT ) -p (listen_port) [ -c (processor_count) ] [ --loglevel-(debug|info|warn|error|fatal) ] [ --cpu-affinity ]
+    USAGE : coconut -M ( SEQUENCE | LIMITAMT ) [ -l (listen_ip) ] -p (listen_port) [ -c (processor_count) ] [ --loglevel-(debug|info|warn|error|fatal) ] [ --cpu-affinity (begin_mask) ]
                     global serial service :
                         --reserve (reserve) --server-no (server_no)
                     global limit-amt service :
