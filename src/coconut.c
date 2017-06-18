@@ -104,6 +104,16 @@ struct AcceptedSession
 {
 	struct NetAddress	netaddr ;
 	struct HttpEnv		*http ;
+	struct list_head	unused_node ;
+} ;
+
+#define SESSIONCOUNT_OF_ARRAY	1024
+
+struct AcceptedSessionArray
+{
+	struct AcceptedSession	accepted_session_array[ SESSIONCOUNT_OF_ARRAY ] ;
+	
+	struct list_head	prealloc_node ;
 } ;
 
 /* 共享内存信息结构 */
@@ -126,6 +136,7 @@ struct ShareMemory
 /* 服务端环境结构 */
 struct CoconutServerEnvironment
 {
+	char			listen_ip[ 20 + 1 ] ; /* 侦听IP */
 	int			listen_port ; /* 侦听端口 */
 	int			processor_count ; /* 并发数量 */
 	int			log_level ; /* 日志等级 */
@@ -137,6 +148,9 @@ struct CoconutServerEnvironment
 	
 	struct ShareMemory	data_space_shm ; /* 共享内存系统参数 */
 	int			app_mode ; /* 应用模式 */
+	
+	struct AcceptedSessionArray	accepted_session_array_list ;
+	struct AcceptedSession		accepted_session_unused_list ;
 	
 	union
 	{
@@ -199,38 +213,6 @@ struct CoconutServerEnvironment
 #define GETNETADDRESS(_netaddr_) \
 	strcpy( (_netaddr_).ip , inet_ntoa((_netaddr_).addr.sin_addr) ); \
 	(_netaddr_).port = (int)ntohs( (_netaddr_).addr.sin_port ) ;
-
-/* 转换日志等级值 */
-/*
-static int ConvertLogLevel( char *log_level_desc )
-{
-	if( strcmp( log_level_desc , "DEBUG" ) == 0 )
-		return LOGLEVEL_DEBUG ;
-	else if( strcmp( log_level_desc , "INFO" ) == 0 )
-		return LOGLEVEL_INFO ;
-	else if( strcmp( log_level_desc , "WARN" ) == 0 )
-		return LOGLEVEL_WARN ;
-	else if( strcmp( log_level_desc , "ERROR" ) == 0 )
-		return LOGLEVEL_ERROR ;
-	else if( strcmp( log_level_desc , "FATAL" ) == 0 )
-		return LOGLEVEL_FATAL ;
-	else
-		return -1;
-}
-*/
-
-/* 绑定CPU亲缘性 */
-int BindCpuAffinity( int processor_no )
-{
-	cpu_set_t	cpu_mask ;
-	
-	int		nret = 0 ;
-	
-	CPU_ZERO( & cpu_mask );
-	CPU_SET( processor_no , & cpu_mask );
-	nret = sched_setaffinity( 0 , sizeof(cpu_mask) , & cpu_mask ) ;
-	return nret;
-}
 
 /* 初始化序列号前半段 */
 static int InitSequence( struct CoconutServerEnvironment *p_env )
@@ -974,29 +956,105 @@ static int DispatchProcess( struct CoconutServerEnvironment *p_env , struct Acce
 	return HTTP_OK;
 }
 
+/* 预分配空闲客户端会话结构 */
+static int IncreaseAcceptedSessions( struct CoconutServerEnvironment *p_env )
+{
+	struct AcceptedSessionArray	*p_accepted_session_array = NULL ;
+	struct AcceptedSession		*p_accepted_session = NULL ;
+	int				i ;
+	
+	/* 批量增加空闲HTTP通讯会话 */
+	p_accepted_session_array = (struct AcceptedSessionArray *)malloc( sizeof(struct AcceptedSessionArray) ) ;
+	if( p_accepted_session_array == NULL )
+	{
+		ErrorLog( __FILE__ , __LINE__ , "malloc failed , errno[%d]" , ERRNO );
+		return -1;
+	}
+	memset( p_accepted_session_array , 0x00 , sizeof(struct AcceptedSessionArray) );
+	list_add_tail( & (p_accepted_session_array->prealloc_node) , & (p_env->accepted_session_array_list.prealloc_node) );
+	
+	for( i = 0 , p_accepted_session = p_accepted_session_array->accepted_session_array ; i < sizeof(p_accepted_session_array->accepted_session_array)/sizeof(p_accepted_session_array->accepted_session_array[0]) ; i++ , p_accepted_session++ )
+	{
+		p_accepted_session->http = CreateHttpEnv() ;
+		if( p_accepted_session->http == NULL )
+		{
+			ERRORLOG(  "CreateHttpEnv failed , errno[%d]" , ERRNO );
+			return TCPMAIN_RETURN_ERROR;
+		}
+		SetHttpTimeout( p_accepted_session->http , -1 );
+		ResetHttpEnv( p_accepted_session->http );
+		
+		list_add_tail( & (p_accepted_session->unused_node) , & (p_env->accepted_session_unused_list.unused_node) );
+		DebugLog( __FILE__ , __LINE__ , "init accepted session[%p]" , p_accepted_session );
+	}
+	
+	return 0;
+}
+
+/* 从预分配的空闲客户端会话结构中取出一个 */
+static struct AcceptedSession *FetchAcceptedSessionUnused( struct CoconutServerEnvironment *p_env )
+{
+	struct AcceptedSession	*p_accepted_session = NULL ;
+	
+	int			nret = 0 ;
+	
+	/* 如果空闲客户端会话链表为空 */
+	if( list_empty( & (p_env->accepted_session_unused_list.unused_node) ) )
+	{
+		nret = IncreaseAcceptedSessions( p_env ) ;
+		if( nret )
+			return NULL;
+	}
+	
+	/* 从空闲HTTP通讯会话链表中移出一个会话，并返回之 */
+	p_accepted_session = list_first_entry( & (p_env->accepted_session_unused_list.unused_node) , struct AcceptedSession , unused_node ) ;
+	list_del( & (p_accepted_session->unused_node) );
+	
+	DebugLog( __FILE__ , __LINE__ , "fetch accepted session[%p]" , p_accepted_session );
+	ResetHttpEnv( p_accepted_session->http );
+	return p_accepted_session;
+}
+
+/* 把当前客户端会话放回空闲链表中去 */
+static void SetAcceptedSessionUnused( struct CoconutServerEnvironment *p_env , struct AcceptedSession *p_accepted_session )
+{
+	DebugLog( __FILE__ , __LINE__ , "putback accepted session[%p]" , p_accepted_session );
+	
+	/* 把当前工作HTTP通讯会话移到空闲HTTP通讯会话链表中 */
+	list_add_tail( & (p_accepted_session->unused_node) , & (p_env->accepted_session_unused_list.unused_node) );
+	
+	return;
+}
+
+/* 销毁所有客户端物理会话结构 */
+static void FreeAllAcceptedSessionArray( struct CoconutServerEnvironment *p_env )
+{
+	struct list_head		*p_curr = NULL , *p_next = NULL ;
+	struct AcceptedSessionArray	*p_accepted_session_array = NULL ;
+	
+	list_for_each_safe( p_curr , p_next , & (p_env->accepted_session_array_list.prealloc_node) )
+	{
+		p_accepted_session_array = container_of( p_curr , struct AcceptedSessionArray , prealloc_node ) ;
+		list_del( & (p_accepted_session_array->prealloc_node) );
+		
+		free( p_accepted_session_array );
+	}
+	
+	return;
+}
+
 /* 处理接受新连接事件 */
-static int OnAcceptingSocket( struct TcpdaemonServerEnvirment *p , struct CoconutServerEnvironment *p_env , int sock , struct sockaddr *p_addr )
+static int OnAcceptingSocket( struct TcpdaemonServerEnvironment *p , struct CoconutServerEnvironment *p_env , int sock , struct sockaddr *p_addr )
 {
 	struct AcceptedSession	*p_accepted_session = NULL ;
 	
 	/* 申请内存以存放已连接会话 */
-	p_accepted_session = (struct AcceptedSession *)malloc( sizeof(struct AcceptedSession) ) ;
+	p_accepted_session = FetchAcceptedSessionUnused( p_env ) ;
 	if( p_accepted_session == NULL )
 		return TCPMAIN_RETURN_ERROR;
-	memset( p_accepted_session , 0x00 , sizeof(struct AcceptedSession) );
 	
 	p_accepted_session->netaddr.sock = sock ;
 	memcpy( & (p_accepted_session->netaddr.addr) , & p_addr , sizeof(struct sockaddr) );
-	
-	/* 初始化HTTP环境 */
-	p_accepted_session->http = CreateHttpEnv() ;
-	if( p_accepted_session->http == NULL )
-	{
-		ERRORLOG(  "CreateHttpEnv failed , errno[%d]" , ERRNO );
-		return TCPMAIN_RETURN_ERROR;
-	}
-	SetHttpTimeout( p_accepted_session->http , -1 );
-	ResetHttpEnv( p_accepted_session->http );
 	
 	/* 设置已连接会话数据结构 */
 	TDSetIoMultiplexDataPtr( p , p_accepted_session );
@@ -1006,19 +1064,19 @@ static int OnAcceptingSocket( struct TcpdaemonServerEnvirment *p , struct Coconu
 }
 
 /* 主动关闭套接字 */
-static int OnClosingSocket( struct TcpdaemonServerEnvirment *p , struct CoconutServerEnvironment *p_env , struct AcceptedSession *p_accepted_session )
+static int OnClosingSocket( struct TcpdaemonServerEnvironment *p , struct CoconutServerEnvironment *p_env , struct AcceptedSession *p_accepted_session )
 {
 	/* 释放已连接会话 */
 	INFOLOG(  "close session[%d]" , p_accepted_session->netaddr.sock );
-	DestroyHttpEnv( p_accepted_session->http );
-	free( p_accepted_session );
+	
+	SetAcceptedSessionUnused( p_env , p_accepted_session );
 	
 	/* 等待下一任意事件 */
 	return TCPMAIN_RETURN_WAITINGFOR_NEXT;
 }
 
 /* 接收客户端套接字数据 */
-static int OnReceivingSocket( struct TcpdaemonServerEnvirment *p , struct CoconutServerEnvironment *p_env , struct AcceptedSession *p_accepted_session )
+static int OnReceivingSocket( struct TcpdaemonServerEnvironment *p , struct CoconutServerEnvironment *p_env , struct AcceptedSession *p_accepted_session )
 {
 	int			nret = 0 ;
 	
@@ -1061,7 +1119,7 @@ static int OnReceivingSocket( struct TcpdaemonServerEnvirment *p , struct Coconu
 }
 
 /* 发送客户端套接字数据 */
-static int OnSendingSocket( struct TcpdaemonServerEnvirment *p , struct CoconutServerEnvironment *p_env , struct AcceptedSession *p_accepted_session )
+static int OnSendingSocket( struct TcpdaemonServerEnvironment *p , struct CoconutServerEnvironment *p_env , struct AcceptedSession *p_accepted_session )
 {
 	int			nret = 0 ;
 	
@@ -1092,7 +1150,7 @@ static int OnSendingSocket( struct TcpdaemonServerEnvirment *p , struct CoconutS
 }
 
 static func_tcpmain tcpmain ;
-int tcpmain( struct TcpdaemonServerEnvirment *p , int sock , void *p_addr )
+int tcpmain( struct TcpdaemonServerEnvironment *p , int sock , void *p_addr )
 {
 	struct CoconutServerEnvironment	*p_env = TDGetTcpmainParameter(p) ;
 	
@@ -1113,9 +1171,9 @@ int tcpmain( struct TcpdaemonServerEnvirment *p , int sock , void *p_addr )
 
 static void usage()
 {
-	printf( "coconut v0.0.7.0\n" );
+	printf( "coconut v0.0.7.1\n" );
 	printf( "Copyright by calvin 2017\n" );
-	printf( "USAGE : coconut -M ( SEQUENCE | LIMITAMT ) -p (listen_port) [ -c (processor_count) ] [ --loglevel-(debug|info|warn|error|fatal) ] [ --cpu-affinity ]\n" );
+	printf( "USAGE : coconut -M (SEQUENCE|LIMITAMT) [ -l (listen_ip) ] -p (listen_port) [ -c (processor_count) ] [ --loglevel-(debug|info|warn|error|fatal) ] [ --cpu-affinity (begin_mask) ]\n" );
 	printf( "                global serial service :\n" );
 	printf( "                    --reserve (reserve) --server-no (server_no)\n" );
 	printf( "                global limit-amt service :\n" );
@@ -1159,6 +1217,10 @@ int main( int argc , char *argv[] )
 					exit(7);
 				}
 			}
+			else if( strcmp( argv[i] , "-l" ) == 0 && i + 1 < argc )
+			{
+				strncpy( p_env->listen_ip , argv[++i] , sizeof(p_env->listen_ip)-1 );
+			}
 			else if( strcmp( argv[i] , "-p" ) == 0 && i + 1 < argc )
 			{
 				p_env->listen_port = atoi(argv[++i]) ;
@@ -1187,9 +1249,9 @@ int main( int argc , char *argv[] )
 			{
 				p_env->log_level = LOGLEVEL_FATAL ;
 			}
-			else if( strcmp( argv[i] , "--cpu-affinity" ) == 0 )
+			else if( strcmp( argv[i] , "--cpu-affinity" ) == 0 && i + 1 < argc )
 			{
-				p_env->cpu_affinity = 1 ;
+				p_env->cpu_affinity = atoi(argv[++i]) ;
 			}
 			else if( strcmp( argv[i] , "--reserve" ) == 0 && i + 1 < argc )
 			{
@@ -1236,7 +1298,7 @@ int main( int argc , char *argv[] )
 		{
 			if( p_env->p_reserve == NULL || p_env->p_server_no == NULL )
 			{
-				printf( "expect parameter '--reserve (reserve)' or '--server-no (server_no)' for -M SERIAL\n" );
+				printf( "expect parameter '--reserve (reserve)' or '--server-no (server_no)' for -M SEQUENCE\n" );
 				return -1;
 			}
 			
@@ -1299,6 +1361,17 @@ int main( int argc , char *argv[] )
 			return 1;
 		}
 		
+		/* 创建空闲客户端会话物理结构链表 */
+		memset( & (p_env->accepted_session_array_list) , 0x00 , sizeof(struct AcceptedSessionArray) );
+		INIT_LIST_HEAD( & (p_env->accepted_session_array_list.prealloc_node) );
+		
+		/* 创建空闲客户端会话结构链表 */
+		memset( & (p_env->accepted_session_unused_list) , 0x00 , sizeof(struct AcceptedSession) );
+		INIT_LIST_HEAD( & (p_env->accepted_session_unused_list.unused_node) );
+		
+		/* 预分配已连接会话空间 */
+		IncreaseAcceptedSessions( & env );
+		
 		/* 初始化tcpdaemon参数结构 */
 		memset( & para , 0x00 , sizeof(struct TcpdaemonEntryParameter) );
 		para.daemon_level = 1 ;
@@ -1307,11 +1380,12 @@ int main( int argc , char *argv[] )
 		strcpy( para.server_model , "IOMP" );
 		para.timeout_seconds = 60 ;
 		para.process_count = p_env->processor_count ;
-		strcpy( para.ip , "0" );
+		strcpy( para.ip , p_env->listen_ip );
 		para.port = p_env->listen_port ;
 		para.pfunc_tcpmain = & tcpmain ;
 		para.param_tcpmain = & env ;
 		para.tcp_nodelay = 1 ;
+		para.cpu_affinity = p_env->cpu_affinity ;
 		
 		/* 调用tcpdaemon引擎 */
 		nret = tcpdaemon( & para ) ;
@@ -1325,6 +1399,9 @@ int main( int argc , char *argv[] )
 		
 		/* 删除共享内存 */
 		shmctl( p_env->data_space_shm.shmid , IPC_RMID , NULL );
+		
+		/* 释放已连接会话空间 */
+		FreeAllAcceptedSessionArray( p_env );
 	}
 	else
 	{

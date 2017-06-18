@@ -8,15 +8,16 @@
 
 #include "fasterhttp.h"
 
-int			__FASTERHTTP_VERSION_1_1_2 = 0 ;
+int			__FASTERHTTP_VERSION_1_3_0 = 0 ;
 
+/*http缓存结构体*/
 struct HttpBuffer
 {
-	int			buf_size ;
-	char			*base ;
-	char			ref_flag ;
-	char			*fill_ptr ;
-	char			*process_ptr ;
+	int			buf_size ;	/*缓冲区大小*/
+	char			*base ;		/*缓冲区基地址*/
+	char			ref_flag ;	/*缓冲区内部申请还是外部传入*/
+	char			*fill_ptr ;	/*接收数据的偏移量指针*/
+	char			*process_ptr ;	/*解析http报文的偏移量指针*/
 } ;
 
 struct HttpHeader
@@ -3207,8 +3208,6 @@ int StrcatfHttpBuffer( struct HttpBuffer *b , char *format , ... )
 	return 0;
 }
 
-#include "LOGC.h"
-
 int StrcatvHttpBuffer( struct HttpBuffer *b , char *format , va_list valist )
 {
 	va_list		valist_copy ;
@@ -3503,14 +3502,6 @@ void OffsetHttpBufferFillPtr( struct HttpBuffer *b , int offset )
 {
 	b->fill_ptr += offset ;
 	return;
-}
-
-int GetHttpBufferLengthFilled( struct HttpBuffer *b )
-{
-	if( b )
-		return b->fill_ptr-b->base;
-	else
-		return 0;
 }
 
 int GetHttpBufferLengthUnfilled( struct HttpBuffer *b )
