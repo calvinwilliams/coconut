@@ -133,7 +133,7 @@ URL : http://(domain|ip):[port]/empty<br>
     net.ipv4.tcp_max_tw_buckets = 819200
     net.ipv4.tcp_timestamps = 1
     net.ipv4.tcp_tw_reuse = 1
-    net.ipv4.tcp_tw_recycle = 1
+    net.ipv4.tcp_tw_recycle = 0
 
 # 3.使用说明 #
 
