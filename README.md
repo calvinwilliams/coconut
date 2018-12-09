@@ -2,7 +2,50 @@ coconut - Ó¦ÓÃ»º´æ·þÎñÆ÷
 ======================
 Copyright by calvinwilliams
 
-# 1.¸ÅÊö #
+<!-- TOC -->
+
+- [1. ¸ÅÊö](#1-¸ÅÊö)
+- [2. ±àÒë°²×°](#2-±àÒë°²×°)
+        - [2.1. ÏÂÔØ×îÐÂÔ´Âë](#21-ÏÂÔØ×îÐÂÔ´Âë)
+        - [2.2. ±àÒëÔ´Âë°²×°](#22-±àÒëÔ´Âë°²×°)
+- [3. È«¾ÖÐòÁÐºÅ·¢ÉúÆ÷](#3-È«¾ÖÐòÁÐºÅ·¢ÉúÆ÷)
+        - [3.1. ÐòÁÐºÅ¸ñÊ½](#31-ÐòÁÐºÅ¸ñÊ½)
+        - [3.2. ·þÎñ½Ó¿Ú](#32-·þÎñ½Ó¿Ú)
+                - [3.2.1. »ñÈ¡ÐòÁÐºÅ](#321-»ñÈ¡ÐòÁÐºÅ)
+                - [3.2.2. ·´½âÐòÁÐºÅ](#322-·´½âÐòÁÐºÅ)
+        - [3.3. ³¡¾°Ê¾Àý](#33-³¡¾°Ê¾Àý)
+                - [3.3.1. Æô¶¯·þÎñ](#331-Æô¶¯·þÎñ)
+                - [3.3.2. »ñÈ¡ÐòÁÐºÅ](#332-»ñÈ¡ÐòÁÐºÅ)
+                - [3.3.3. ·´½âÐòÁÐºÅ](#333-·´½âÐòÁÐºÅ)
+                - [3.3.4. Í£Ö¹·þÎñ](#334-Í£Ö¹·þÎñ)
+        - [3.4. ÐÔÄÜÑ¹²â](#34-ÐÔÄÜÑ¹²â)
+                - [3.4.1. »ñÈ¡ÐòÁÐºÅ£¨¶ÌÁ¬½Ó£©](#341-»ñÈ¡ÐòÁÐºÅ¶ÌÁ¬½Ó)
+- [4. È«¾Ö¶î¶È¹ÜÀíÆ÷](#4-È«¾Ö¶î¶È¹ÜÀíÆ÷)
+        - [4.1. Ê¹ÓÃËµÃ÷](#41-Ê¹ÓÃËµÃ÷)
+        - [4.2. ·þÎñ½Ó¿Ú](#42-·þÎñ½Ó¿Ú)
+                - [4.2.1. ²éÑ¯¶î¶È](#421-²éÑ¯¶î¶È)
+                - [4.2.2. ÉêÇë¶î¶È](#422-ÉêÇë¶î¶È)
+                - [4.2.3. ³·ÏúÁ÷Ë®](#423-³·ÏúÁ÷Ë®)
+                - [4.2.4. ²¹³ä¶î¶È](#424-²¹³ä¶î¶È)
+                - [4.2.5. ¿Û¼õ¶î¶È](#425-¿Û¼õ¶î¶È)
+                - [4.2.6. Çå¿Õ¶î¶È](#426-Çå¿Õ¶î¶È)
+        - [4.3. ³¡¾°Ê¾Àý](#43-³¡¾°Ê¾Àý)
+                - [4.3.1. Æô¶¯·þÎñ](#431-Æô¶¯·þÎñ)
+                - [4.3.2. ²éÑ¯¶î¶È](#432-²éÑ¯¶î¶È)
+                - [4.3.3. ÉêÇë¶î¶È](#433-ÉêÇë¶î¶È)
+                - [4.3.4. ³·ÏúÁ÷Ë®](#434-³·ÏúÁ÷Ë®)
+                - [4.3.5. ²¹³ä¶î¶È](#435-²¹³ä¶î¶È)
+                - [4.3.6. ¿Û¼õ¶î¶È](#436-¿Û¼õ¶î¶È)
+                - [4.3.7. Çå¿Õ¶î¶È](#437-Çå¿Õ¶î¶È)
+                - [4.3.8. ²é¿´µ¼³öµÄÉêÇëÁ÷Ë®ÎÄ¼þ](#438-²é¿´µ¼³öµÄÉêÇëÁ÷Ë®ÎÄ¼þ)
+        - [4.4. ÐÔÄÜÑ¹²â](#44-ÐÔÄÜÑ¹²â)
+                - [4.4.1. ÉêÇë¶î¶È£¨³¤Á¬½Ó£©](#441-ÉêÇë¶î¶È³¤Á¬½Ó)
+- [5. ¸½Â¼A.Æô¶¯ÃüÁîÐÐ²ÎÊý](#5-¸½Â¼aÆô¶¯ÃüÁîÐÐ²ÎÊý)
+- [6. ×îºó](#6-×îºó)
+
+<!-- /TOC -->
+
+# 1. ¸ÅÊö
 
 coconutÊÇÒ»¿îÓ¦ÓÃ»º´æ·þÎñÆ÷£¬Ö÷ÒªÓÃÓÚ³¡¾°»¯µÄ»º´æ·þÎñ¡£
 
@@ -11,90 +54,9 @@ coconutÄ¿Ç°Ìá¹©ÁËÁ½ÖÖ³¡¾°Ä£Ê½£ºÈ«¾ÖÐòÁÐºÅ·¢ÉúÆ÷¡¢È«¾Ö¶î¶È¹ÜÀíÆ÷£¬¿É³ÉÎª·Ö²¼Ê½¡¢¼
 * È«¾ÖÐòÁÐºÅ·¢ÉúÆ÷ Îª·Ö²¼Ê½¡¢¼¯Èº»¯ÏµÍ³Ìá¹©ÓÐÐòÔö³¤¡¢È«¾ÖÎ¨Ò»¡¢¿É·´½âµÄ¸ßÐÔÄÜÐòÁÐºÅÉú³É·Ö·¢·þÎñ
 * È«¾Ö¶î¶È¹ÜÀíÆ÷ Îª·Ö²¼Ê½¡¢¼¯Èº»¯ÏµÍ³Ìá¹©¶ÔÀí²Æ¶î¶È¡¢¿â´æÊýÁ¿µÈ¸ßÆµÈÈµã¶ÔÏóµÄ¸ßÐÔÄÜÎÞËø½Ó¿Ú·þÎñ
 
-# 1.1.È«¾ÖÐòÁÐºÅ·¢ÉúÆ÷ #
+# 2. ±àÒë°²×°
 
-# 1.1.1.ÐòÁÐºÅ¸ñÊ½ #
-
-coconutÉú³ÉµÄÐòÁÐºÅÎª16¸ö64½øÖÆ¿É¼û×Ö·û×é³É£¬¾ßÌå¸ñÊ½ÈçÏÂ£º
-
-| ÇøºÅ | ÇøÃû | ËµÃ÷ |
-|:---:|:---:| --- |
-| µÚÒ»Çø | ·ÖÇøÄ¿Â¼ | 2¸öÁùÊ®ËÄ½øÖÆ×Ö·û ¹²12¸ö¶þ½øÖÆÎ»<br>µÚÒ»¶Î3¸ö¶þ½øÖÆÎ»±íÊ¾±£ÁôÇøÁùÊ®ËÄ½øÖÆ×Ö·û¸öÊý<br>µÚ¶þ¶Î3¸ö¶þ½øÖÆÎ»±íÊ¾·þÎñÆ÷±àºÅÇøÁùÊ®ËÄ½øÖÆ×Ö·û¸öÊý<br>µÚÈý¶Î3¸ö¶þ½øÖÆÎ»±íÊ¾Ãë´ÁÇøÁùÊ®ËÄ½øÖÆ×Ö·û¸öÊý<br>µÚËÄ¶Î3¸ö¶þ½øÖÆÎ»±íÊ¾ÐòºÅÇøÁùÊ®ËÄ½øÖÆ×Ö·û¸öÊý |
-| µÚ¶þÇø | ±£ÁôÇø | 1¸öÁùÊ®ËÄ½øÖÆ×Ö·û ÓÐ6¸ö¶þ½øÖÆÎ»¿ÉÓÃ |
-| µÚÈýÇø | ·þÎñÆ÷±àºÅÇø | 2¸öÁùÊ®ËÄ½øÖÆ×Ö·û ¿É±íÊ¾4096Ì¨·¢ÆðÆ÷·þÎñÆ÷ |
-| µÚËÄÇø | Ãë´ÁÇø | 6¸öÁùÊ®ËÄ½øÖÆ×Ö·û ¿É±íÊ¾2179ÄêµÄÃë´Á |
-| µÚÎåÇø | ÐòºÅÇø | 5¸öÁùÊ®ËÄ½øÖÆ×Ö·û ÐòºÅÇø¼ä[1,10ÒÚ] |
-|  |  | ¹²16¸öÁùÊ®ËÄ½øÖÆ×Ö·û |
-
-£¨64½øÖÆ×Ö·û¼¯ºÏ£º0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_£©
-
-ÈçÐòÁÐºÅ£ºaR2011o_cWG00002
-
-·´½â³öÀ´°üº¬ÈçÏÂÐÅÏ¢£ºreserve: 2  server_no: 1  secondstamp: 1492962986(2017-04-23 23:56:26) serial_no: 2
-
-# 1.1.2.·þÎñ½Ó¿Ú #
-
-coconutµÄÈ«¾ÖÐòÁÐºÅ·¢ÉúÆ÷Ìá¹©ÁË2¸öHTTP½Ó¿Ú£º
-
-* »ñÈ¡ÐòÁÐºÅ<br>
-·½·¨ : GET<br>
-URL : http://(domain|ip):[port]/fetch<br>
-·µ»ØÖµ : Èç¹ûµ÷ÓÃ³É¹¦£¬·µ»ØHTTP×´Ì¬Âë200£¬HTTPÌåÖÐ»ØËÍÒ»¸öÓÐÐòÔö³¤µÄÈ«¾ÖÎ¨Ò»µÄÐòÁÐºÅ£¬ÈçaR2011o_cWG00002£»Èç¹û·¢ÉúÏµÍ³¼¶´íÎó£¬·µ»ØHTTP×´Ì¬Âë·Ç200<br>
-±¸×¢ : ¿ÉÀûÓÃ±¸×¢ÇøÇø·ÖÒµÎñÀàÐÍ£»¿ÉÀûÓÃ·þÎñÆ÷±àºÅ²¿ÊðÐòÁÐºÅ·¢ÉúÆ÷¼¯Èº
-
-* ·´½âÐòÁÐºÅ<br>
-·½·¨ : GET<br>
-URL : http://(domain|ip):[port]/explain?sequence=(ÐòÁÐºÅ)<br>
-·µ»ØÖµ : Èç¹ûµ÷ÓÃ³É¹¦£¬·µ»ØHTTP×´Ì¬Âë200£¬HTTPÌåÖÐ»ØËÍ·´½âÎÄ±¾£»Èç¹û·¢ÉúÏµÍ³¼¶´íÎó£¬·µ»ØHTTP×´Ì¬Âë·Ç200<br>
-±¸×¢ : ·´½âÎÄ±¾¸ñÊ½"reserve: (±£ÁôÖµ)  server_no: (·þÎñÆ÷±àºÅ)  secondstamp: (1970ÄêÖÁ½ñÃë´Á)((ÈË¿ÉÔÄ¶ÁµÄÈÕÆÚÊ±¼ä¸ñÊ½)) serial_no: (ÐòºÅ)"
-
-# 1.2.È«¾Ö¶î¶È¹ÜÀíÆ÷ #
-
-È«¾Ö¶î¶È¹ÜÀíÆ÷Ìá¹©¸ßÐÔÄÜÎÞËø½Ó¿Ú¶Ô¶î¶È¡¢¿â´æµÈ¸ßÆµÈÈµã¶ÔÏó×ö²éÑ¯¶î¶È¡¢ÉêÇë¶î¶È¡¢³·ÏúÁ÷Ë®¡¢²¹³ä¶î¶È¡¢¿Û¼õ¶î¶È¡¢Çå¿Õ¶î¶ÈµÈ´¦Àí¡£
-
-# 1.2.1.Ê¹ÓÃ¹ý³Ì #
-
-ÃüÁîÐÐÖ¸¶¨¶î¶È¡¢µ¼³ö½á¹ûÁ÷Ë®ÎÄ¼þÃûÆô¶¯coconut£¬coconut¶ÔÍâÌá¹©HTTP½Ó¿Ú£¬¿Í»§¶Ë¿É³¤/¶ÌÁ¬½Ó·¢ËÍÖ¸Áî¸øcoconutÒÔ²Ù×÷¶î¶È¡£ÆÚ¼ä»¹¿ÉÒÔ²¹³ä¡¢¿Û¼õÉõÖÁÇå¿Õ¶î¶È¡£µ±¶î¶ÈÎª0Ê±×Ô¶¯µ¼³ö½á¹ûÁ÷Ë®ÎÄ¼þ£¬¿ÉÄÜ»áÖØ¸´µ¼³ö¸²¸Çµ¼³öÎÄ¼þ¡£
-
-µ¼³ö½á¹ûÁ÷Ë®ÎÄ¼þ¸ñÊ½ÎªÃ¿ÐÐÒ»ÌõÁ÷Ë®£¬°××Ö·û·Ö¸îÎªÁ½ÁÐ£ºÉêÇëÁ÷Ë®ºÅ¡¢ÉêÇë¶î¶È£¬Èç¹ûÄ³Á÷Ë®±»³·ÏúÔòÔÙ¼ÓÒ»ÁÐ£º³·ÏúÁ÷Ë®ºÅ¡£
-
-# 1.2.2.·þÎñ½Ó¿Ú #
-
-coconutµÄÈ«¾Ö¶î¶È¹ÜÀíÆ÷Ìá¹©ÁË6¸öHTTP½Ó¿Ú£º
-
-* ²éÑ¯¶î¶È<br>
-·½·¨ : GET<br>
-URL : http://(domain|ip):[port]/query<br>
-·µ»ØÖµ : Èç¹ûµ÷ÓÃ³É¹¦£¬·µ»ØHTTP×´Ì¬Âë200£¬HTTPÌåÖÐ»ØËÍ"(Ê£Óà¶î¶ÈÖµ)"£¬Èç¹û·¢Éú²ÎÊý´íÎóÔò·µ»Ø"-1"£»Èç¹û·¢ÉúÏµÍ³¼¶´íÎó£¬·µ»ØHTTP×´Ì¬Âë·Ç200<br>
-
-* ÉêÇë¶î¶È<br>
-·½·¨ : GET<br>
-URL : http://(domain|ip):[port]/apply?amt=(¶î¶ÈÖµ)<br>
-·µ»ØÖµ : Èç¹ûµ÷ÓÃ³É¹¦£¬·µ»ØHTTP×´Ì¬Âë200£¬HTTPÌåÖÐ»ØËÍ"(ÉêÇëÁ÷Ë®ºÅ) (Ê£Óà¶î¶ÈÖµ)"£¬Èç¹û¶î¶ÈÒÑ¿Õ»ò¶î¶È²»¹»Ôò·µ»Ø"0"£¬Èç¹û·¢Éú²ÎÊý´íÎóÔò·µ»Ø"-1"£»Èç¹û·¢ÉúÏµÍ³¼¶´íÎó£¬·µ»ØHTTP×´Ì¬Âë·Ç200<br>
-
-* ³·ÏúÁ÷Ë®<br>
-·½·¨ : GET<br>
-URL : http://(domain|ip):[port]/cancel?jnlsno=(ÉêÇëÁ÷Ë®ºÅ)<br>
-·µ»ØÖµ : Èç¹ûµ÷ÓÃ³É¹¦£¬·µ»ØHTTP×´Ì¬Âë200£¬HTTPÌåÖÐ»ØËÍ"(³·ÏúÁ÷Ë®ºÅ) (Ê£Óà¶î¶ÈÖµ)"£¬Èç¹ûÕÒ²»µ½Ô­ÉêÇëÁ÷Ë®»òÒÑ±»³·ÏúÔò·µ»Ø"0"£¬Èç¹û·¢Éú²ÎÊý´íÎóÔò·µ»Ø"-1"£»Èç¹û·¢ÉúÏµÍ³¼¶´íÎó£¬·µ»ØHTTP×´Ì¬Âë·Ç200<br>
-
-* ²¹³ä¶î¶È<br>
-·½·¨ : GET<br>
-URL : http://(domain|ip):[port]/increase?amt=(¶î¶ÈÖµ)<br>
-·µ»ØÖµ : Èç¹ûµ÷ÓÃ³É¹¦£¬·µ»ØHTTP×´Ì¬Âë200£¬HTTPÌåÖÐ»ØËÍ"(Ê£Óà¶î¶ÈÖµ)"£¬Èç¹û·¢Éú²ÎÊý´íÎóÔò·µ»Ø"-1"£»Èç¹û·¢ÉúÏµÍ³¼¶´íÎó£¬·µ»ØHTTP×´Ì¬Âë·Ç200<br>
-
-* ¿Û¼õ¶î¶È<br>
-·½·¨ : GET<br>
-URL : http://(domain|ip):[port]/decrease?amt=(¶î¶ÈÖµ)<br>
-·µ»ØÖµ : Èç¹ûµ÷ÓÃ³É¹¦£¬·µ»ØHTTP×´Ì¬Âë200£¬HTTPÌåÖÐ»ØËÍ"(Ê£Óà¶î¶ÈÖµ)"£¬Èç¹û·¢Éú²ÎÊý´íÎóÔò·µ»Ø"-1"£»Èç¹û·¢ÉúÏµÍ³¼¶´íÎó£¬·µ»ØHTTP×´Ì¬Âë·Ç200<br>
-
-* Çå¿Õ¶î¶È<br>
-·½·¨ : GET<br>
-URL : http://(domain|ip):[port]/empty<br>
-·µ»ØÖµ : Èç¹ûµ÷ÓÃ³É¹¦£¬·µ»ØHTTP×´Ì¬Âë200£¬HTTPÌåÖÐ»ØËÍ"(Ê£Óà¶î¶ÈÖµ)"£¬Èç¹û·¢Éú²ÎÊý´íÎóÔò·µ»Ø"-1"£»Èç¹û·¢ÉúÏµÍ³¼¶´íÎó£¬·µ»ØHTTP×´Ì¬Âë·Ç200<br>
-
-# 2.±àÒë°²×° #
-
-# 2.1.ÏÂÔØ×îÐÂÔ´Âë #
+## 2.1. ÏÂÔØ×îÐÂÔ´Âë
 
     $ git clone http://git.oschina.net/calvinwilliams/coconut.git
     Cloning into 'coconut'...
@@ -104,7 +66,7 @@ URL : http://(domain|ip):[port]/empty<br>
     Unpacking objects: 100% (27/27), done.
     Checking connectivity... done.
     
-# 2.2.±àÒëÔ´Âë°²×° #
+## 2.2. ±àÒëÔ´Âë°²×°
 
     $ cd src
     $ make -f makefile.Linux install
@@ -135,25 +97,72 @@ URL : http://(domain|ip):[port]/empty<br>
     net.ipv4.tcp_tw_reuse = 1
     net.ipv4.tcp_tw_recycle = 0
 
-# 3.Ê¹ÓÃËµÃ÷ #
+# 3. È«¾ÖÐòÁÐºÅ·¢ÉúÆ÷
 
-# 3.1.È«¾ÖÐòÁÐºÅ·¢ÉúÆ÷ #
+## 3.1. ÐòÁÐºÅ¸ñÊ½
 
-Æô¶¯·þÎñ
+coconutÉú³ÉµÄÐòÁÐºÅÎª16¸ö64½øÖÆ¿É¼û×Ö·û×é³É£¬¾ßÌå¸ñÊ½ÈçÏÂ£º
+
+| ÇøºÅ | ÇøÃû | ËµÃ÷ |
+|:---:|:---:| --- |
+| µÚÒ»Çø | ·ÖÇøÄ¿Â¼(index) | 2¸öÁùÊ®ËÄ½øÖÆ×Ö·û ¹²12¸ö¶þ½øÖÆÎ»<br>µÚÒ»¶Î3¸ö¶þ½øÖÆÎ»±íÊ¾±£ÁôÇøÁùÊ®ËÄ½øÖÆ×Ö·û¸öÊý<br>µÚ¶þ¶Î3¸ö¶þ½øÖÆÎ»±íÊ¾·þÎñÆ÷±àºÅÇøÁùÊ®ËÄ½øÖÆ×Ö·û¸öÊý<br>µÚÈý¶Î3¸ö¶þ½øÖÆÎ»±íÊ¾Ãë´ÁÇøÁùÊ®ËÄ½øÖÆ×Ö·û¸öÊý<br>µÚËÄ¶Î3¸ö¶þ½øÖÆÎ»±íÊ¾ÐòºÅÇøÁùÊ®ËÄ½øÖÆ×Ö·û¸öÊý |
+| µÚ¶þÇø | ±£ÁôÇø(reserve) | 1¸öÁùÊ®ËÄ½øÖÆ×Ö·û ÓÐ6¸ö¶þ½øÖÆÎ»¿ÉÓÃ |
+| µÚÈýÇø | ·þÎñÆ÷±àºÅÇø(server_no) | 2¸öÁùÊ®ËÄ½øÖÆ×Ö·û ¿É±íÊ¾4096Ì¨·¢ÆðÆ÷·þÎñÆ÷ |
+| µÚËÄÇø | Ãë´ÁÇø(secondstamp) | 6¸öÁùÊ®ËÄ½øÖÆ×Ö·û ¿É±íÊ¾2179ÄêµÄÃë´Á |
+| µÚÎåÇø | ÐòºÅÇø(serial_no) | 5¸öÁùÊ®ËÄ½øÖÆ×Ö·û ÐòºÅÇø¼ä[1,10ÒÚ] |
+|  |  | ¹²16¸öÁùÊ®ËÄ½øÖÆ×Ö·û |
+
+£¨64½øÖÆ×Ö·û¼¯ºÏ£º0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ-_£©
+
+ÈçÐòÁÐºÅ£ºaR2011o_cWG00002
+
+·´½â³öÀ´°üº¬ÈçÏÂÐÅÏ¢<br>
+reserve: 2<br>
+server_no: 1<br>
+secondstamp: 1492962986(2017-04-23 23:56:26)<br>
+serial_no: 2<br>
+
+## 3.2. ·þÎñ½Ó¿Ú
+
+coconutµÄÈ«¾ÖÐòÁÐºÅ·¢ÉúÆ÷Ìá¹©ÁË2¸öHTTP½Ó¿Ú£º
+
+### 3.2.1. »ñÈ¡ÐòÁÐºÅ
+
+·½·¨ : GET<br>
+URL : http://(domain|ip):[port]/fetch<br>
+·µ»ØÖµ : Èç¹ûµ÷ÓÃ³É¹¦£¬·µ»ØHTTP×´Ì¬Âë200£¬HTTPÌåÖÐ»ØËÍÒ»¸öÓÐÐòÔö³¤µÄÈ«¾ÖÎ¨Ò»µÄÐòÁÐºÅ£¬ÈçaR2011o_cWG00002£»Èç¹û·¢ÉúÏµÍ³¼¶´íÎó£¬·µ»ØHTTP×´Ì¬Âë·Ç200<br>
+±¸×¢ : ¿ÉÀûÓÃ±¸×¢ÇøÇø·ÖÒµÎñÀàÐÍ£»¿ÉÀûÓÃ·þÎñÆ÷±àºÅ²¿ÊðÐòÁÐºÅ·¢ÉúÆ÷¼¯Èº
+
+### 3.2.2. ·´½âÐòÁÐºÅ
+
+·½·¨ : GET<br>
+URL : http://(domain|ip):[port]/explain?sequence=(ÐòÁÐºÅ)<br>
+·µ»ØÖµ : Èç¹ûµ÷ÓÃ³É¹¦£¬·µ»ØHTTP×´Ì¬Âë200£¬HTTPÌåÖÐ»ØËÍ·´½âÎÄ±¾£»Èç¹û·¢ÉúÏµÍ³¼¶´íÎó£¬·µ»ØHTTP×´Ì¬Âë·Ç200<br>
+±¸×¢ : ·´½âÎÄ±¾¸ñÊ½"reserve: (±£ÁôÖµ)  server_no: (·þÎñÆ÷±àºÅ)  secondstamp: (1970ÄêÖÁ½ñÃë´Á)((ÈË¿ÉÔÄ¶ÁµÄÈÕÆÚÊ±¼ä¸ñÊ½)) serial_no: (ÐòºÅ)"
+
+## 3.3. ³¡¾°Ê¾Àý
+
+### 3.3.1. Æô¶¯·þÎñ
 
     $ coconut -M SEQUENCE -l 127.0.0.1 -p 9527 -c 1 --loglevel-warn --reserve 2 --server-no 1
 
-»ñÈ¡ÐòÁÐºÅ
+### 3.3.2. »ñÈ¡ÐòÁÐºÅ
 
     $ curl http://127.0.0.1:9527/fetch
     aR2011pfizz00001
 
-·´½âÐòÁÐºÅ
+### 3.3.3. ·´½âÐòÁÐºÅ
 
     $ curl http://127.0.0.1:9527/explain?sequence=aR2011pfizz00001
     reserve: 2  server_no: 1  secondstamp: 1497180387 (2017-06-11 19:26:27)  serial_no: 1
 
-Ñ¹²â »ñÈ¡ÐòÁÐºÅ£¨¶ÌÁ¬½Ó£©
+### 3.3.4. Í£Ö¹·þÎñ
+
+    $ ps -ef | grep -w coconut | awk '{if($3==1)print $2}' | xargs kill
+
+## 3.4. ÐÔÄÜÑ¹²â
+
+### 3.4.1. »ñÈ¡ÐòÁÐºÅ£¨¶ÌÁ¬½Ó£©
 
     $ ab -c 100 -n 100000 http://127.0.0.1:9527/fetch
     This is ApacheBench, Version 2.3 <$Revision: 1430300 $>
@@ -211,22 +220,68 @@ URL : http://(domain|ip):[port]/empty<br>
       99%      1
      100%   1403 (longest request)
 
-Í£Ö¹·þÎñ
+# 4. È«¾Ö¶î¶È¹ÜÀíÆ÷
 
-    $ ps -ef | grep -w coconut | awk '{if($3==1)print $2}' | xargs kill
+È«¾Ö¶î¶È¹ÜÀíÆ÷Ìá¹©¸ßÐÔÄÜÎÞËø½Ó¿Ú¶Ô¶î¶È¡¢¿â´æµÈ¸ßÆµÈÈµã¶ÔÏó×ö²éÑ¯¶î¶È¡¢ÉêÇë¶î¶È¡¢³·ÏúÁ÷Ë®¡¢²¹³ä¶î¶È¡¢¿Û¼õ¶î¶È¡¢Çå¿Õ¶î¶ÈµÈ´¦Àí¡£
 
-# 3.2.È«¾Ö¶î¶È¹ÜÀíÆ÷ #
+## 4.1. Ê¹ÓÃËµÃ÷
 
-Æô¶¯·þÎñ
+ÃüÁîÐÐÖ¸¶¨¶î¶È¡¢µ¼³ö½á¹ûÁ÷Ë®ÎÄ¼þÃûÆô¶¯coconut£¬coconut¶ÔÍâÌá¹©HTTP½Ó¿Ú£¬¿Í»§¶Ë¿É³¤/¶ÌÁ¬½Ó·¢ËÍÖ¸Áî¸øcoconutÒÔ²Ù×÷¶î¶È¡£ÆÚ¼ä»¹¿ÉÒÔ²¹³ä¡¢¿Û¼õÉõÖÁÇå¿Õ¶î¶È¡£µ±¶î¶ÈÎª0Ê±×Ô¶¯µ¼³ö½á¹ûÁ÷Ë®ÎÄ¼þ£¬¿ÉÄÜ»áÖØ¸´µ¼³ö¸²¸Çµ¼³öÎÄ¼þ¡£
+
+µ¼³ö½á¹ûÁ÷Ë®ÎÄ¼þ¸ñÊ½ÎªÃ¿ÐÐÒ»ÌõÁ÷Ë®£¬°××Ö·û·Ö¸îÎªÁ½ÁÐ£ºÉêÇëÁ÷Ë®ºÅ¡¢ÉêÇë¶î¶È£¬Èç¹ûÄ³Á÷Ë®±»³·ÏúÔòÔÙ¼ÓÒ»ÁÐ£º³·ÏúÁ÷Ë®ºÅ¡£
+
+## 4.2. ·þÎñ½Ó¿Ú
+
+coconutµÄÈ«¾Ö¶î¶È¹ÜÀíÆ÷Ìá¹©ÁË6¸öHTTP½Ó¿Ú£º
+
+### 4.2.1. ²éÑ¯¶î¶È
+
+·½·¨ : GET<br>
+URL : http://(domain|ip):[port]/query<br>
+·µ»ØÖµ : Èç¹ûµ÷ÓÃ³É¹¦£¬·µ»ØHTTP×´Ì¬Âë200£¬HTTPÌåÖÐ»ØËÍ"(Ê£Óà¶î¶ÈÖµ)"£¬Èç¹û·¢Éú²ÎÊý´íÎóÔò·µ»Ø"-1"£»Èç¹û·¢ÉúÏµÍ³¼¶´íÎó£¬·µ»ØHTTP×´Ì¬Âë·Ç200<br>
+
+### 4.2.2. ÉêÇë¶î¶È
+
+·½·¨ : GET<br>
+URL : http://(domain|ip):[port]/apply?amt=(¶î¶ÈÖµ)<br>
+·µ»ØÖµ : Èç¹ûµ÷ÓÃ³É¹¦£¬·µ»ØHTTP×´Ì¬Âë200£¬HTTPÌåÖÐ»ØËÍ"(ÉêÇëÁ÷Ë®ºÅ) (Ê£Óà¶î¶ÈÖµ)"£¬Èç¹û¶î¶ÈÒÑ¿Õ»ò¶î¶È²»¹»Ôò·µ»Ø"0"£¬Èç¹û·¢Éú²ÎÊý´íÎóÔò·µ»Ø"-1"£»Èç¹û·¢ÉúÏµÍ³¼¶´íÎó£¬·µ»ØHTTP×´Ì¬Âë·Ç200<br>
+
+### 4.2.3. ³·ÏúÁ÷Ë®
+
+·½·¨ : GET<br>
+URL : http://(domain|ip):[port]/cancel?jnlsno=(ÉêÇëÁ÷Ë®ºÅ)<br>
+·µ»ØÖµ : Èç¹ûµ÷ÓÃ³É¹¦£¬·µ»ØHTTP×´Ì¬Âë200£¬HTTPÌåÖÐ»ØËÍ"(³·ÏúÁ÷Ë®ºÅ) (Ê£Óà¶î¶ÈÖµ)"£¬Èç¹ûÕÒ²»µ½Ô­ÉêÇëÁ÷Ë®»òÒÑ±»³·ÏúÔò·µ»Ø"0"£¬Èç¹û·¢Éú²ÎÊý´íÎóÔò·µ»Ø"-1"£»Èç¹û·¢ÉúÏµÍ³¼¶´íÎó£¬·µ»ØHTTP×´Ì¬Âë·Ç200<br>
+
+### 4.2.4. ²¹³ä¶î¶È
+
+·½·¨ : GET<br>
+URL : http://(domain|ip):[port]/increase?amt=(¶î¶ÈÖµ)<br>
+·µ»ØÖµ : Èç¹ûµ÷ÓÃ³É¹¦£¬·µ»ØHTTP×´Ì¬Âë200£¬HTTPÌåÖÐ»ØËÍ"(Ê£Óà¶î¶ÈÖµ)"£¬Èç¹û·¢Éú²ÎÊý´íÎóÔò·µ»Ø"-1"£»Èç¹û·¢ÉúÏµÍ³¼¶´íÎó£¬·µ»ØHTTP×´Ì¬Âë·Ç200<br>
+
+### 4.2.5. ¿Û¼õ¶î¶È
+
+·½·¨ : GET<br>
+URL : http://(domain|ip):[port]/decrease?amt=(¶î¶ÈÖµ)<br>
+·µ»ØÖµ : Èç¹ûµ÷ÓÃ³É¹¦£¬·µ»ØHTTP×´Ì¬Âë200£¬HTTPÌåÖÐ»ØËÍ"(Ê£Óà¶î¶ÈÖµ)"£¬Èç¹û·¢Éú²ÎÊý´íÎóÔò·µ»Ø"-1"£»Èç¹û·¢ÉúÏµÍ³¼¶´íÎó£¬·µ»ØHTTP×´Ì¬Âë·Ç200<br>
+
+### 4.2.6. Çå¿Õ¶î¶È
+
+·½·¨ : GET<br>
+URL : http://(domain|ip):[port]/empty<br>
+·µ»ØÖµ : Èç¹ûµ÷ÓÃ³É¹¦£¬·µ»ØHTTP×´Ì¬Âë200£¬HTTPÌåÖÐ»ØËÍ"(Ê£Óà¶î¶ÈÖµ)"£¬Èç¹û·¢Éú²ÎÊý´íÎóÔò·µ»Ø"-1"£»Èç¹û·¢ÉúÏµÍ³¼¶´íÎó£¬·µ»ØHTTP×´Ì¬Âë·Ç200<br>
+
+## 4.3. ³¡¾°Ê¾Àý
+
+### 4.3.1. Æô¶¯·þÎñ
 
     $ coconut -M LIMITAMT -l 127.0.0.1 -p 9527 -c 1 --loglevel-warn --limit-amt 1000000 --export-jnls-amt-pathfilename $HOME/coconut_JNLSNO_AMT.txt
 
-²éÑ¯¶î¶È
+### 4.3.2. ²éÑ¯¶î¶È
 
     $ curl http://127.0.0.1:9527/query
     1000000
 
-ÉêÇë¶î¶È
+### 4.3.3. ÉêÇë¶î¶È
 
     $ curl http://127.0.0.1:9527/apply?amt=1
     1 999999
@@ -239,27 +294,27 @@ URL : http://(domain|ip):[port]/empty<br>
     $ curl http://127.0.0.1:9527/apply?amt=5
     5 999985
 
-³·ÏúÁ÷Ë®
+### 4.3.4. ³·ÏúÁ÷Ë®
 
     $ curl http://127.0.0.1:9527/cancel?jnlsno=4
     6 999989
 
-²¹³ä¶î¶È
+### 4.3.5. ²¹³ä¶î¶È
 
     $ curl http://127.0.0.1:9527/increase?amt=1000000
     1000000
 
-¿Û¼õ¶î¶È
+### 4.3.6. ¿Û¼õ¶î¶È
 
     $ curl http://127.0.0.1:9527/decrease?amt=100000
     900000
 
-Çå¿Õ¶î¶È
+### 4.3.7. Çå¿Õ¶î¶È
 
     $ curl http://127.0.0.1:9527/empty
     0
 
-²é¿´µ¼³öµÄÉêÇëÁ÷Ë®ÎÄ¼þ
+### 4.3.8. ²é¿´µ¼³öµÄÉêÇëÁ÷Ë®ÎÄ¼þ
 
     $ ls -l $HOME/coconut_JNLSNO_AMT.txt
     -rw-rw-r--   1 calvin calvin        22 6ÔÂ  11 19:47 coconut_JNLSNO_AMT.txt
@@ -270,7 +325,9 @@ URL : http://(domain|ip):[port]/empty<br>
     4 4 6
     5 5
 
-Ñ¹²â ÉêÇë¶î¶È£¨³¤Á¬½Ó£©
+## 4.4. ÐÔÄÜÑ¹²â
+
+### 4.4.1. ÉêÇë¶î¶È£¨³¤Á¬½Ó£©
 
     $ curl http://127.0.0.1:9527/increase?amt=1000000
     1000000
@@ -336,7 +393,7 @@ URL : http://(domain|ip):[port]/empty<br>
 
     $ ps -ef | grep -w coconut | awk '{if($3==1)print $2}' | xargs kill
 
-# ¸½Â¼A.Æô¶¯ÃüÁîÐÐ²ÎÊý #
+# 5. ¸½Â¼A.Æô¶¯ÃüÁîÐÐ²ÎÊý
 
 ²»´ø²ÎÊýµÄÖ´ÐÐcoconut»áÏÔÊ¾ËùÓÐ²ÎÊýÌáÊ¾
 
@@ -362,7 +419,7 @@ URL : http://(domain|ip):[port]/empty<br>
 --limit-amt (amt) : ×Ü¶î¶È<br>
 --export-jnls-amt-pathfilename (pathfilename) : ÉêÇë½áÊøºóµ¼³öÉêÇëÁ÷Ë®ÎÄ¼þ<br>
 
-# ×îºó #
+# 6. ×îºó
 
 coconutÊ¹ÓÃµ½ÁË×÷ÕßµÄÆäËü¿ªÔ´ÏîÄ¿iLOG3,fasterhttp,tcpdaemon¡£
 
