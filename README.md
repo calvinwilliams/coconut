@@ -1,6 +1,5 @@
-coconut - 应用缓存服务器
+应用缓存服务器(coconut)
 ======================
-Copyright by calvinwilliams
 
 <!-- TOC -->
 
