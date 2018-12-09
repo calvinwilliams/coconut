@@ -115,11 +115,11 @@ coconut生成的序列号为16个64进制可见字符组成，具体格式如下：
 
 如序列号：aR2011o_cWG00002
 
-反解出来包含如下信息<br>
-reserve: 2<br>
-server_no: 1<br>
-secondstamp: 1492962986(2017-04-23 23:56:26)<br>
-serial_no: 2<br>
+反解出来包含如下信息
+* reserve: 2
+* server_no: 1
+* secondstamp: 1492962986(2017-04-23 23:56:26)
+* serial_no: 2
 
 ## 3.2. 服务接口
 
@@ -127,17 +127,17 @@ coconut的全局序列号发生器提供了2个HTTP接口：
 
 ### 3.2.1. 获取序列号
 
-方法 : GET<br>
-URL : http://(domain|ip):[port]/fetch<br>
-返回值 : 如果调用成功，返回HTTP状态码200，HTTP体中回送一个有序增长的全局唯一的序列号，如aR2011o_cWG00002；如果发生系统级错误，返回HTTP状态码非200<br>
-备注 : 可利用备注区区分业务类型；可利用服务器编号部署序列号发生器集群
+* 方法 : GET
+* URL : http://(domain|ip):[port]/fetch
+* 返回值 : 如果调用成功，返回HTTP状态码200，HTTP体中回送一个有序增长的全局唯一的序列号，如aR2011o_cWG00002；如果发生系统级错误，返回HTTP状态码非200
+* 备注 : 可利用备注区区分业务类型；可利用服务器编号部署序列号发生器集群
 
 ### 3.2.2. 反解序列号
 
-方法 : GET<br>
-URL : http://(domain|ip):[port]/explain?sequence=(序列号)<br>
-返回值 : 如果调用成功，返回HTTP状态码200，HTTP体中回送反解文本；如果发生系统级错误，返回HTTP状态码非200<br>
-备注 : 反解文本格式"reserve: (保留值)  server_no: (服务器编号)  secondstamp: (1970年至今秒戳)((人可阅读的日期时间格式)) serial_no: (序号)"
+* 方法 : GET
+* URL : http://(domain|ip):[port]/explain?sequence=(序列号)
+* 返回值 : 如果调用成功，返回HTTP状态码200，HTTP体中回送反解文本；如果发生系统级错误，返回HTTP状态码非200
+* 备注 : 反解文本格式"reserve: (保留值)  server_no: (服务器编号)  secondstamp: (1970年至今秒戳)((人可阅读的日期时间格式)) serial_no: (序号)"
 
 ## 3.3. 场景示例
 
@@ -235,39 +235,39 @@ coconut的全局额度管理器提供了6个HTTP接口：
 
 ### 4.2.1. 查询额度
 
-方法 : GET<br>
-URL : http://(domain|ip):[port]/query<br>
-返回值 : 如果调用成功，返回HTTP状态码200，HTTP体中回送"(剩余额度值)"，如果发生参数错误则返回"-1"；如果发生系统级错误，返回HTTP状态码非200<br>
+* 方法 : GET
+* URL : http://(domain|ip):[port]/query
+* 返回值 : 如果调用成功，返回HTTP状态码200，HTTP体中回送"(剩余额度值)"，如果发生参数错误则返回"-1"；如果发生系统级错误，返回HTTP状态码非200
 
 ### 4.2.2. 申请额度
 
-方法 : GET<br>
-URL : http://(domain|ip):[port]/apply?amt=(额度值)<br>
-返回值 : 如果调用成功，返回HTTP状态码200，HTTP体中回送"(申请流水号) (剩余额度值)"，如果额度已空或额度不够则返回"0"，如果发生参数错误则返回"-1"；如果发生系统级错误，返回HTTP状态码非200<br>
+* 方法 : GET
+* URL : http://(domain|ip):[port]/apply?amt=(额度值)
+返回值 : 如果调用成功，返回HTTP状态码200，HTTP体中回送"(申请流水号) (剩余额度值)"，如果额度已空或额度不够则返回"0"，如果发生参数错误则返回"-1"；如果发生系统级错误，返回HTTP状态码非200
 
 ### 4.2.3. 撤销流水
 
-方法 : GET<br>
-URL : http://(domain|ip):[port]/cancel?jnlsno=(申请流水号)<br>
-返回值 : 如果调用成功，返回HTTP状态码200，HTTP体中回送"(撤销流水号) (剩余额度值)"，如果找不到原申请流水或已被撤销则返回"0"，如果发生参数错误则返回"-1"；如果发生系统级错误，返回HTTP状态码非200<br>
+* 方法 : GET
+* URL : http://(domain|ip):[port]/cancel?jnlsno=(申请流水号)
+* 返回值 : 如果调用成功，返回HTTP状态码200，HTTP体中回送"(撤销流水号) (剩余额度值)"，如果找不到原申请流水或已被撤销则返回"0"，如果发生参数错误则返回"-1"；如果发生系统级错误，返回HTTP状态码非200
 
 ### 4.2.4. 补充额度
 
-方法 : GET<br>
-URL : http://(domain|ip):[port]/increase?amt=(额度值)<br>
-返回值 : 如果调用成功，返回HTTP状态码200，HTTP体中回送"(剩余额度值)"，如果发生参数错误则返回"-1"；如果发生系统级错误，返回HTTP状态码非200<br>
+* 方法 : GET
+* URL : http://(domain|ip):[port]/increase?amt=(额度值)
+* 返回值 : 如果调用成功，返回HTTP状态码200，HTTP体中回送"(剩余额度值)"，如果发生参数错误则返回"-1"；如果发生系统级错误，返回HTTP状态码非200
 
 ### 4.2.5. 扣减额度
 
-方法 : GET<br>
-URL : http://(domain|ip):[port]/decrease?amt=(额度值)<br>
-返回值 : 如果调用成功，返回HTTP状态码200，HTTP体中回送"(剩余额度值)"，如果发生参数错误则返回"-1"；如果发生系统级错误，返回HTTP状态码非200<br>
+* 方法 : GET
+* URL : http://(domain|ip):[port]/decrease?amt=(额度值)
+* 返回值 : 如果调用成功，返回HTTP状态码200，HTTP体中回送"(剩余额度值)"，如果发生参数错误则返回"-1"；如果发生系统级错误，返回HTTP状态码非200
 
 ### 4.2.6. 清空额度
 
-方法 : GET<br>
-URL : http://(domain|ip):[port]/empty<br>
-返回值 : 如果调用成功，返回HTTP状态码200，HTTP体中回送"(剩余额度值)"，如果发生参数错误则返回"-1"；如果发生系统级错误，返回HTTP状态码非200<br>
+* 方法 : GET
+* URL : http://(domain|ip):[port]/empty
+* 返回值 : 如果调用成功，返回HTTP状态码200，HTTP体中回送"(剩余额度值)"，如果发生参数错误则返回"-1"；如果发生系统级错误，返回HTTP状态码非200
 
 ## 4.3. 场景示例
 
@@ -405,18 +405,18 @@ URL : http://(domain|ip):[port]/empty<br>
                     global limit-amt service :
                         --limit-amt (amt) --export-jnls-amt-pathfilename (pathfilename)
 
--M ( SEQUENCE | LIMITAMT ) : 场景模式 *SEQUENCE全局序列号发生器；LIMITAMT 全局额度管理器*<br>
--p (listen_port) : 侦听端口<br>
--c (processor_count) : 并发进程数量。全局额度管理器模式目前只支持单并发<br>
---loglevel-(debug|info|warn|error|fatal) : 日志等级，默认warn等级。日志文件输出到$HOME/log/coconut.log<br>
+* -M ( SEQUENCE | LIMITAMT ) : 场景模式 *SEQUENCE全局序列号发生器；LIMITAMT 全局额度管理器*
+* -p (listen_port) : 侦听端口
+* -c (processor_count) : 并发进程数量。全局额度管理器模式目前只支持单并发
+* --loglevel-(debug|info|warn|error|fatal) : 日志等级，默认warn等级。日志文件输出到$HOME/log/coconut.log
 
-全局序列号发生器 场景模式<br>
---reserve (reserve) ： 保留值，可用作业务类型<br>
---server-no (server_no) ： 服务器编号<br>
+全局序列号发生器 场景模式
+* --reserve (reserve) ： 保留值，可用作业务类型
+* --server-no (server_no) ： 服务器编号
 
-全局额度管理器 场景模式<br>
---limit-amt (amt) : 总额度<br>
---export-jnls-amt-pathfilename (pathfilename) : 申请结束后导出申请流水文件<br>
+全局额度管理器 场景模式
+* --limit-amt (amt) : 总额度
+* --export-jnls-amt-pathfilename (pathfilename) : 申请结束后导出申请流水文件
 
 # 6. 最后
 
